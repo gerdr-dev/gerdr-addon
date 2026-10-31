@@ -1,0 +1,32 @@
+{
+  "name": "主题色",
+  "version": "1.0.0",
+  "description": "把 Gerdr 的强调色（用户气泡、按钮、链接）换成你挑的颜色。",
+  "icon": "icon.svg",
+  "settings": [
+    {
+      "key": "color",
+      "title": "强调色",
+      "type": "color",
+      "default": "#e5569b",
+      "description": "浅色主题下就用这个颜色。"
+    },
+    {
+      "key": "dark",
+      "title": "深色主题下",
+      "type": "select",
+      "default": "lift",
+      "options": [
+        {
+          "value": "lift",
+          "label": "自动调整（推荐）"
+        },
+        {
+          "value": "same",
+          "label": "用同一个颜色"
+        }
+      ],
+      "description": "选「自动调整」时，系统会根据深色背景自动提亮这个颜色，保证链接和气泡看得清。"
+    }
+  ]
+}
