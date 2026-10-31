@@ -66,7 +66,7 @@ export default defineAddon({
       const t = days[days.length - 1];
       const cost = total(t);
       return (
-        <div className="px-1.5 py-1">
+        <div className="px-1.5">
           <button
             type="button"
             className="w-full rounded-md px-2 py-1 text-left hover:bg-accent/60"

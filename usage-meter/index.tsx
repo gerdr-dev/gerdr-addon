@@ -84,7 +84,7 @@ export default defineAddon({
       if (!shown.length) return null;
       const now = Date.now();
       return (
-        <div className="px-1.5 py-1">
+        <div className="px-1.5">
           <button
             type="button"
             className="w-full rounded-md px-2 py-1 text-left hover:bg-accent/60"

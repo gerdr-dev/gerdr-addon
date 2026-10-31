@@ -1,7 +1,9 @@
 {
   "name": "额度条",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "侧栏底部常驻 Claude Code / Codex 的额度：5 小时和本周用了多少，点开看全部额度和重置时间。",
   "icon": "icon.svg",
-  "screenshots": ["screenshot.png"]
+  "screenshots": [
+    "screenshot.png"
+  ]
 }
