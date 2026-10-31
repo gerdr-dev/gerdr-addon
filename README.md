@@ -6,7 +6,7 @@
 |---|---|
 | [今日](today) | 侧栏显示今天跑完了几个任务、花了多少钱，点开看 7 天 |
 | [额度条](usage-meter) | 侧栏底部常驻 Claude Code / Codex 的额度和重置时间 |
-| [缓存时钟](cache-clock) | 最新一轮的时间按提示缓存还剩多久变色：绿 / 黄 / 红 |
+| [缓存时钟](cache-clock) | 提示缓存快过期 / 已过期时，在最新一轮的时间旁边提醒；时长可设置 |
 | [常用短语](quick-phrases) | 输入框旁一个 ⚡，一点就填常说的话；右键把选中的文字引用到输入框 |
 | [复制 tab](duplicate-tab) | `prefix+a` / `prefix+i` 把当前 tab 复制到后面 / 前面 |
 | [跑完了通知我](notify-when-done) | 看不见的会话跑完了或在等你时，弹系统通知 |
@@ -32,6 +32,7 @@ my-addon/
 - **改名字**：`g.tabLabel` / `g.paneTitle` / `g.workspaceLabel` / `g.sessionTitle`。
 - **命令和快捷键**：`g.command`。
 - **听事件、做动作**：`g.on("turnEnd" | "needsInput" | "sessionCreated" | "focusChanged" | "stats")`、`g.actions.*`、`g.notify`。
+- **设置项**：`addon.json` 里写 `settings`（number / string / boolean / select），「设置 → 扩展」里自动生成表单，代码里 `g.settings.get(key)` 读；存在 gerdr 里，各设备一样。
 - **数据**：`g.state()`、`g.usage()`（额度）、`g.stats()`（每天完成数和花费）、`g.storage`。
 - **资源文件**：`g.asset("icon.png")` 拿到扩展文件夹里文件的地址。
 - **后台进程**：`addon.json` 里写 `service`，gerdr 后端负责起、挂了重启（比如一直连着蓝牙手环）。

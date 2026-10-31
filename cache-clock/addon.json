@@ -1,7 +1,33 @@
 {
   "name": "缓存时钟",
-  "version": "1.0.0",
-  "description": "最新一轮下面的时间按提示缓存还剩多久变色：绿色还在，黄色快过期，红色已过期（下一句要全价重读上下文）。",
+  "version": "1.1.0",
+  "description": "缓存还在时什么都不显示；快过期时最新一轮的时间旁边出现黄色的「缓存 N 分钟后过期」，过期了变红色「缓存已过期」。",
   "icon": "icon.svg",
-  "screenshots": ["screenshot.png"]
+  "screenshots": [
+    "screenshot.png",
+    "screenshot-expired.png",
+    "screenshot-settings.png"
+  ],
+  "settings": [
+    {
+      "key": "ttlMinutes",
+      "title": "缓存时长",
+      "type": "number",
+      "default": 60,
+      "min": 1,
+      "max": 1440,
+      "unit": "分钟",
+      "description": "订阅账号的 Claude Code 是 60；用 API key 或进了超额用量是 5。"
+    },
+    {
+      "key": "warnMinutes",
+      "title": "提前多久提醒",
+      "type": "number",
+      "default": 10,
+      "min": 1,
+      "max": 1440,
+      "unit": "分钟",
+      "description": "离过期还剩这么久时出现黄色提示。"
+    }
+  ]
 }
