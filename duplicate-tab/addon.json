@@ -1,5 +1,9 @@
 {
   "name": "复制 tab",
-  "version": "1.0.0",
-  "description": "prefix+a / prefix+i 把当前 tab 复制到后面 / 前面：同一个目录、同一种 agent，开一个新会话。"
+  "version": "1.0.1",
+  "description": "prefix+a / prefix+i 把当前 tab 复制到后面 / 前面：同一个目录、同一种 agent，开一个新会话。",
+  "icon": "icon.svg",
+  "screenshots": [
+    "screenshot.png"
+  ]
 }

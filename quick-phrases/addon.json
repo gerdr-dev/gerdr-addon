@@ -1,0 +1,7 @@
+{
+  "name": "常用短语",
+  "version": "1.0.0",
+  "description": "输入框底栏一个 ⚡ 按钮，一点就把「继续」「先提交一下」这类常说的话填进去；右键选中的文字还能引用到输入框。",
+  "icon": "icon.svg",
+  "screenshots": ["screenshot.png"]
+}

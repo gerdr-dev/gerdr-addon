@@ -1,5 +1,6 @@
 {
   "name": "会话标题：每 5 句重起",
-  "version": "1.0.0",
-  "description": "示例：自己定会话标题怎么起 —— 每 5 句话重新概括一次，标题前带上 agent。"
+  "version": "1.0.1",
+  "description": "示例：自己定会话标题怎么起 —— 每 5 句话重新概括一次，标题前带上 agent。",
+  "icon": "icon.svg"
 }

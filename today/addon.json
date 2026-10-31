@@ -1,0 +1,7 @@
+{
+  "name": "今日",
+  "version": "1.0.0",
+  "description": "侧栏里显示今天 agent 跑完了几个任务、花了多少钱，点开看最近 7 天的柱状图。",
+  "icon": "icon.svg",
+  "screenshots": ["screenshot.png"]
+}
