@@ -26,6 +26,8 @@ my-addon/
   screenshot.png  商店列表里直接显示，最好放一张
 ```
 
+完整的开发手册：[GUIDE.md](https://github.com/gerdr-dev/gerdr/blob/main/internal/addons/builtin/GUIDE.md)（装了 gerdr 的机器上也有一份：`~/.gerdr/addons/GUIDE.md`）。
+
 扩展能做的事（完整 API 见 [gerdr.d.ts](gerdr.d.ts)，它是 gerdr 写进 `~/.gerdr/addons` 那份的拷贝）：
 
 - **画界面**：`g.slot("sidebar" | "paneTitle", 组件)`、`g.composerAction`（输入框底栏的按钮）、`g.contextMenu`（右键菜单）、`g.turnStat`（每轮下面那行时间的颜色和提示）；`.tsx` 里直接写 JSX，hooks 用 `g.React`，组件用 `g.ui`，图标用 `g.icons`（lucide）。
