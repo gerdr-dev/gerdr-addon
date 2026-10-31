@@ -1,0 +1,7 @@
+{
+  "name": "缓存时钟",
+  "version": "1.0.0",
+  "description": "最新一轮下面的时间按提示缓存还剩多久变色：绿色还在，黄色快过期，红色已过期（下一句要全价重读上下文）。",
+  "icon": "icon.svg",
+  "screenshots": ["screenshot.png"]
+}

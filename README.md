@@ -6,6 +6,7 @@
 |---|---|
 | [今日](today) | 侧栏显示今天跑完了几个任务、花了多少钱，点开看 7 天 |
 | [额度条](usage-meter) | 侧栏底部常驻 Claude Code / Codex 的额度和重置时间 |
+| [缓存时钟](cache-clock) | 最新一轮的时间按提示缓存还剩多久变色：绿 / 黄 / 红 |
 | [常用短语](quick-phrases) | 输入框旁一个 ⚡，一点就填常说的话；右键把选中的文字引用到输入框 |
 | [复制 tab](duplicate-tab) | `prefix+a` / `prefix+i` 把当前 tab 复制到后面 / 前面 |
 | [跑完了通知我](notify-when-done) | 看不见的会话跑完了或在等你时，弹系统通知 |
@@ -27,7 +28,7 @@ my-addon/
 
 扩展能做的事（完整 API 见 [gerdr.d.ts](gerdr.d.ts)，它是 gerdr 写进 `~/.gerdr/addons` 那份的拷贝）：
 
-- **画界面**：`g.slot("sidebar" | "paneTitle", 组件)`、`g.composerAction`（输入框底栏的按钮）、`g.contextMenu`（右键菜单）；`.tsx` 里直接写 JSX，hooks 用 `g.React`，组件用 `g.ui`，图标用 `g.icons`（lucide）。
+- **画界面**：`g.slot("sidebar" | "paneTitle", 组件)`、`g.composerAction`（输入框底栏的按钮）、`g.contextMenu`（右键菜单）、`g.turnStat`（每轮下面那行时间的颜色和提示）；`.tsx` 里直接写 JSX，hooks 用 `g.React`，组件用 `g.ui`，图标用 `g.icons`（lucide）。
 - **改名字**：`g.tabLabel` / `g.paneTitle` / `g.workspaceLabel` / `g.sessionTitle`。
 - **命令和快捷键**：`g.command`。
 - **听事件、做动作**：`g.on("turnEnd" | "needsInput" | "sessionCreated" | "focusChanged" | "stats")`、`g.actions.*`、`g.notify`。
