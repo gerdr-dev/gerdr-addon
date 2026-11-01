@@ -1,9 +1,18 @@
 {
   "name": "今日",
-  "version": "1.1.0",
-  "description": "侧栏里显示今天 agent 跑完了几个任务、花了多少钱，点开看最近 7 天的柱状图。",
+  "version": "1.2.0",
+  "description": "侧栏里显示今天 agent 跑完了几个任务、花了多少钱，点开看最近 7 天的柱状图。Gerdr Agent 的 token 按你设置的价格表换算成钱。",
   "icon": "icon.svg",
   "screenshots": [
     "screenshot.png"
+  ],
+  "settings": [
+    {
+      "key": "prices",
+      "title": "模型价格（美元 / 百万 token）",
+      "type": "text",
+      "default": "# 模型  输入  输出  缓存读  缓存写\n# 模型名可以带服务商（openai/gpt-*），* 是通配，从上往下第一行匹配的算数；缓存价不写就按输入价\nclaude-opus-*    5     25    0.5    6.25\nclaude-sonnet-*  3     15    0.3    3.75\nclaude-haiku-*   1     5     0.1    1.25\ngpt-*            1.25  10    0.125\ndeepseek-*       0.28  0.42  0.028",
+      "description": "Gerdr Agent 只报 token 不报钱，按这张表换算。默认是官方标价，走中转的按实际价格改。Claude Code 自己报了钱的轮次不用这张表。"
+    }
   ]
 }
