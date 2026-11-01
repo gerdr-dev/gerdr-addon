@@ -8,7 +8,8 @@
 //                "settings" become a form in Settings → Add-ons; read them with g.settings.get(key):
 //                  {"key": "ttl", "title": "缓存时长", "type": "number", "default": 60, "min": 1, "max": 1440, "unit": "分钟"}
 //                type: number / string / boolean / select (with "options": [{"value": 5, "label": "5 分钟"}]) /
-//                color (a "#rrggbb" string, picked from a palette or typed)
+//                color (a "#rrggbb" string, picked from a palette or typed) / secret (a string the form masks:
+//                tokens, keys; g.settings.get returns it in the clear)
 //   index.ts     the UI half (or what "main" names): export default defineAddon({...}). It may import other files of
 //                the folder; images, sounds and other files it ships are reached with g.asset("icon.png").
 //
@@ -100,8 +101,11 @@ declare global {
     on(event: "turnEnd", fn: (e: SessionEvent & { stopReason: string; error?: string }) => void): Dispose;
     on(event: "needsInput", fn: (e: SessionEvent & { kind: "permission" | "ask" }) => void): Dispose;
     on(event: "sessionCreated", fn: (e: SessionEvent) => void): Dispose;
-    /** Today's turns done or cost changed (g.stats()). Coalesced: at most every couple of seconds. */
-    on(event: "stats", fn: () => void): Dispose;
+    /**
+     * A turn ended, any session, as the backend logged it (the same record g.turns returns). Unlike turnEnd it carries
+     * the turn's facts (cost, tokens, whether the agent started it itself) and comes once per turn per window.
+     */
+    on(event: "turn", fn: (turn: TurnRecord) => void): Dispose;
     on(event: "focusChanged", fn: (e: { pane?: PaneInfo; tab?: TabInfo; workspace?: WorkspaceInfo }) => void): Dispose;
 
     /** 弹一条提示。system: true 时用系统通知（mac App / 浏览器通知权限）。 */
@@ -127,6 +131,30 @@ declare global {
       TooltipTrigger: Component<{ asChild?: boolean; children?: any }>;
       TooltipContent: Component<{ side?: "top" | "bottom" | "left" | "right"; children?: any }>;
       Switch: Component<{ checked?: boolean; onCheckedChange?: (v: boolean) => void; disabled?: boolean }>;
+      /**
+       * A centered modal (Radix Dialog). Render it from the "overlay" slot and open it from a command.
+       * showCloseButton={false} drops the ✕. For a drawer use Sheet below.
+       */
+      Dialog: Component<{ open?: boolean; onOpenChange?: (open: boolean) => void; children?: any }>;
+      DialogContent: Component<{ className?: string; showCloseButton?: boolean; children?: any }>;
+      DialogHeader: Component<{ className?: string; children?: any }>;
+      DialogTitle: Component<{ className?: string; children?: any }>;
+      DialogDescription: Component<{ className?: string; children?: any }>;
+      DialogFooter: Component<{ className?: string; children?: any }>;
+      /** Closes the dialog it is in; asChild to make your own button do it. */
+      DialogClose: Component<{ asChild?: boolean; children?: any }>;
+      /**
+       * A drawer (shadcn Sheet: a Radix Dialog sliding in from an edge), used like Dialog. SheetContent defaults to
+       * side="right", 3/4 of the width up to sm:max-w-sm; widen with className="sm:max-w-md". It has no padding of its
+       * own besides SheetHeader / SheetFooter (p-4).
+       */
+      Sheet: Component<{ open?: boolean; onOpenChange?: (open: boolean) => void; children?: any }>;
+      SheetContent: Component<{ side?: "top" | "right" | "bottom" | "left"; className?: string; showCloseButton?: boolean; children?: any }>;
+      SheetHeader: Component<{ className?: string; children?: any }>;
+      SheetTitle: Component<{ className?: string; children?: any }>;
+      SheetDescription: Component<{ className?: string; children?: any }>;
+      SheetFooter: Component<{ className?: string; children?: any }>;
+      SheetClose: Component<{ asChild?: boolean; children?: any }>;
       /** Joins class names, later Tailwind classes winning (clsx + tailwind-merge). */
       cn(...classes: any[]): string;
     };
@@ -139,8 +167,13 @@ declare global {
      *   "sidebar"    the left sidebar, above its bottom row (full width, no props). The slot pads above and below
      *                once for all blocks: give yours horizontal padding only, or two blocks leave a gap between them
      *   "paneTitle"  every pane's title bar, before its ⋯ menu (props: { pane: PaneInfo; tab: TabInfo }); keep it small
+     *   "overlay"    mounted once at the app's root and always there (no props, takes no space): where a dialog or
+     *                drawer opened by a command lives. The sidebar slot can't host one: it isn't mounted while the
+     *                sidebar is collapsed or on a phone. Keep the open state outside the component (a variable plus a
+     *                listener) so a command's run() can flip it.
      */
     slot(name: "sidebar", component: Component<{}>, opts?: { order?: number }): Dispose;
+    slot(name: "overlay", component: Component<{}>, opts?: { order?: number }): Dispose;
     slot(name: "paneTitle", component: Component<{ pane: PaneInfo; tab: TabInfo }>, opts?: { order?: number }): Dispose;
 
     /**
@@ -171,10 +204,21 @@ declare global {
 
     // ---- data ----
 
+    /**
+     * An HTTP request made by gerdr's backend, not the page, so the API needs no CORS headers (a plain fetch() from
+     * an add-on is cross-origin). Text in, text out: a body that isn't a string is sent as JSON (Content-Type set
+     * unless you set it). Like fetch(), an error status resolves (check ok); it rejects only when the server can't be
+     * reached, the URL isn't http(s), or 30s pass. Responses over 10 MB are refused.
+     */
+    fetch(url: string, init?: { method?: string; headers?: Record<string, string>; body?: unknown }): Promise<FetchResult>;
     /** The accounts' quotas (Claude Code, Codex): what the composer's /usage shows. force: skip the cache. */
     usage(force?: boolean): Promise<UsageInfo[]>;
-    /** Turns done and money spent per day, the last `days` (default 1), today last. g.on("stats") says when they change. */
-    stats(days?: number): Promise<DayStats[]>;
+    /**
+     * The turns that ended in [since, until) (unix ms; until defaults to now), oldest first, every session and agent.
+     * Gerdr logs each turn once, window or not; counting is yours: what is "a task", which day it falls on, what to add
+     * up. Today's: g.turns({ since: new Date().setHours(0, 0, 0, 0) }). g.on("turn") brings each new one.
+     */
+    turns(range: { since: number; until?: number }): Promise<TurnRecord[]>;
 
     /** This add-on's own service (addon.json, see the top of this file). Without one, status() is undefined and send rejects. */
     service: {
@@ -311,6 +355,17 @@ declare global {
     sessionId?: string;
   }
 
+  interface FetchResult {
+    ok: boolean;
+    status: number;
+    statusText: string;
+    /** Lower-cased names. */
+    headers: Record<string, string>;
+    text: string;
+    /** JSON.parse(text); throws when it isn't JSON. */
+    json<T = any>(): T;
+  }
+
   interface UsageLimit {
     kind: string;
     /** Shown as is: "5 小时", "本周", "本周 · Opus"… */
@@ -332,13 +387,22 @@ declare global {
     at?: number;
   }
 
-  interface DayStats {
-    /** 2026-10-31, local time */
-    date: string;
-    /** Turns that ended normally (not cancelled, not failed). */
-    done: number;
-    /** USD by agent, as the agent reported it: only Claude Code reports money. */
-    cost?: Record<string, number>;
+  /** One finished turn (g.turns, g.on("turn")). */
+  interface TurnRecord {
+    /** When it ended (unix ms). */
+    ts: number;
+    sessionId: string;
+    /** claude / codex / … (a variant like claude-2 as is) */
+    agent: string;
+    cwd?: string;
+    /** end_turn (finished normally) · cancelled · error · max_tokens · refusal … */
+    stopReason: string;
+    /** The agent started it itself (a background task finished and it reported back): no message from a person. */
+    auto?: boolean;
+    durationMs?: number;
+    outputTokens?: number;
+    /** USD, as the agent reported it for this turn. Only Claude Code reports money (its estimate at API prices). */
+    costUsd?: number;
   }
 
   interface ServiceStatus {

@@ -1,13 +1,42 @@
 /// <reference path="../gerdr.d.ts" />
-// Today's work in the sidebar: how many tasks the agents finished (turns that ended normally, every agent) and what
-// they cost (what Claude Code reports; Codex reports tokens, not money). Click for the last 7 days.
-// The numbers are gerdr's (g.stats): every window shows the same ones, counted once.
+// Today's work in the sidebar: how many tasks you handed the agents finished, and what they cost. Click for the last
+// 7 days. Gerdr logs every finished turn once (g.turns); the counting is done here:
+// - a task = a turn that ended normally (end_turn) and that a person started. Turns the agent opened itself (auto: a
+//   background task finished and it reported back) aren't one; they were a quarter of all turns.
+// - cost = what Claude Code reported for each turn (its estimate at API prices); Codex reports tokens, not money.
+// - a turn belongs to the local day it ended on.
 
 const DAYS = 7;
 const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
 
+type Day = { date: string; done: number; cost: number };
+
 const usd = (n: number) => (n >= 100 ? `$${n.toFixed(0)}` : n >= 10 ? `$${n.toFixed(1)}` : `$${n.toFixed(2)}`);
-const total = (d?: DayStats) => Object.values(d?.cost ?? {}).reduce((a, b) => a + b, 0);
+const dateKey = (t: number | Date) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const isTask = (t: TurnRecord) => t.stopReason === "end_turn" && !t.auto;
+
+/** The last DAYS days, today last, empty days included. */
+function bucket(turns: TurnRecord[]): Day[] {
+  const days: Day[] = [];
+  const at: Record<string, Day> = {};
+  for (let i = DAYS - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const day = { date: dateKey(d), done: 0, cost: 0 };
+    days.push(day);
+    at[day.date] = day;
+  }
+  for (const t of turns) {
+    const day = at[dateKey(t.ts)];
+    if (!day) continue;
+    if (isTask(t)) day.done++;
+    day.cost += t.costUsd ?? 0;
+  }
+  return days;
+}
 
 export default defineAddon({
   setup(g) {
@@ -15,17 +44,32 @@ export default defineAddon({
     const { useState, useEffect } = React;
 
     function useDays() {
-      const [days, setDays] = useState<DayStats[] | null>(null);
+      const [days, setDays] = useState<Day[] | null>(null);
       useEffect(() => {
         let live = true;
+        let turns: TurnRecord[] = [];
+        const since = () => {
+          const d = new Date();
+          d.setDate(d.getDate() - (DAYS - 1));
+          return d.setHours(0, 0, 0, 0);
+        };
+        // A Gerdr older than g.turns keeps daily totals itself (g.stats, gone since 2026-11): show those
+        const old = typeof g.turns !== "function" ? (g as any) : undefined;
         const load = () =>
-          g
-            .stats(DAYS)
-            .then((d) => live && setDays(d))
+          (old
+            ? old.stats(DAYS).then((ds: any[]) => ds.map((d) => ({ date: d.date, done: d.done, cost: Object.values<number>(d.cost ?? {}).reduce((a, b) => a + b, 0) })))
+            : g.turns({ since: since() }).then((ts) => bucket((turns = ts)))
+          )
+            .then((d: Day[]) => live && setDays(d))
             .catch(() => {});
         load();
-        const off = g.on("stats", load);
-        // A new day starts at midnight with nothing in it: look again every few minutes
+        const off = old
+          ? old.on("stats", load)
+          : g.on("turn", (t) => {
+              turns = [...turns.filter((x) => x.ts >= since()), t];
+              if (live) setDays(bucket(turns));
+            });
+        // A new day starts at midnight with nothing in it, and a window asleep may have missed turns: look again
         const t = setInterval(load, 5 * 60_000);
         return () => {
           live = false;
@@ -36,7 +80,7 @@ export default defineAddon({
       return days;
     }
 
-    function Bars({ days, value, fmt }: { days: DayStats[]; value: (d: DayStats) => number; fmt: (n: number) => string }) {
+    function Bars({ days, value, fmt }: { days: Day[]; value: (d: Day) => number; fmt: (n: number) => string }) {
       const max = Math.max(...days.map(value), 0);
       return (
         <div className="flex items-end gap-1">
@@ -64,7 +108,7 @@ export default defineAddon({
       const [open, setOpen] = useState(false);
       if (!days) return null;
       const t = days[days.length - 1];
-      const cost = total(t);
+      const cost = t.cost;
       return (
         <div className="px-1.5">
           <button
@@ -75,12 +119,12 @@ export default defineAddon({
           >
             <div className="flex items-center gap-2 text-[11px]">
               <span className="w-11 shrink-0 text-muted-foreground">今日</span>
-              <span className="flex items-center gap-1" title="今天跑完的任务（正常结束的轮次）">
+              <span className="flex items-center gap-1" title="今天你交代、正常结束的轮次（agent 自己开的、取消的、出错的不算）">
                 <icons.CircleCheck className="size-3 text-ok" />
                 <span className="tabular-nums">{t.done}</span>
                 <span className="text-muted-foreground">个任务</span>
               </span>
-              <span className="ml-auto flex items-center gap-1" title="Claude Code 报的花费">
+              <span className="ml-auto flex items-center gap-1" title="Claude Code 报的花费（按 API 价格估算，不是实际账单）">
                 <icons.Coins className="size-3 text-warn" />
                 <span className="tabular-nums">{usd(cost)}</span>
               </span>
@@ -97,9 +141,9 @@ export default defineAddon({
                 <div>
                   <div className="mb-1 flex text-[10px] text-muted-foreground">
                     <span className="flex-1">花费</span>
-                    <span className="tabular-nums">7 天 {usd(days.reduce((a, d) => a + total(d), 0))}</span>
+                    <span className="tabular-nums">7 天 {usd(days.reduce((a, d) => a + d.cost, 0))}</span>
                   </div>
-                  <Bars days={days} value={total} fmt={usd} />
+                  <Bars days={days} value={(d) => d.cost} fmt={usd} />
                 </div>
               </div>
             )}
