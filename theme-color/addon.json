@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "把 Gerdr 的强调色（用户气泡、按钮、链接）换成你挑的颜色。",
   "icon": "icon.svg",
+  "screenshots": [
+    "screenshot.png",
+    "screenshot-dark.png",
+    "screenshot-settings.png"
+  ],
   "settings": [
     {
       "key": "color",
