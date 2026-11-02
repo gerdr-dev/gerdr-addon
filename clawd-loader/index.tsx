@@ -19,7 +19,7 @@ export default defineAddon({
         </span>
       );
     }
-    // A face for the rail's add-on buttons (Settings → 扩展 → 窄条): the chosen costume standing still — the rail is
+    // A face for the rail's add-on buttons (Settings → 扩展 → 分组): the chosen costume standing still — the rail is
     // always in sight, a walking crab there would pull the eye all day. Framed on what the costume actually covers
     // (hats and props stick out of the bare crab), one CSS pixel per cell so its edges stay crisp, within the 36×28 box.
     function Face() {
