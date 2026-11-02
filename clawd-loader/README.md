@@ -1,14 +1,14 @@
 # Pixel Clawd
 
 Seven pixel Clawds for Gerdr: put one in place of the 3×3 working dots in front of a running turn ("Pondering…"),
-and any of them on an add-on button in the column on the far left.
+and any of them as an agent's icon.
 
 ![Demo](demo.gif)
 
 - **Running**: it walks and plays with its prop (the pirate fences, the detective sweeps the magnifier, the engineer
   turns the wrench, the chef tosses the omelette, the racer runs with a fluttering flag, the astronaut floats).
 - **Waiting on you** (a permission, a question): it stands still, breathing, and waves its free claw.
-- **On a button**: the costume standing still, since that column is always in sight.
+- **As an icon**: the costume standing still, since the session list is always in sight.
 
 ![Seven costumes](costumes.png)
 
@@ -17,7 +17,6 @@ and any of them on an add-on button in the column on the far left.
 Installing it changes nothing by itself; the Clawds are sprites you place:
 
 - **Working indicator**: Settings → General → Loading 动画, pick a costume. Gerdr's own ones are in the same list.
-- **Button icon**: Settings → Add-ons → 分组, click a group's icon, pick a costume under 素材.
 - **Agent icon**: Settings → Agent, edit a role, pick a costume below the built-in icons.
 
 Each place can have its own costume.

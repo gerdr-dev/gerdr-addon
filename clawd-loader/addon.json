@@ -1,13 +1,16 @@
 {
   "name": "Pixel Clawd",
-  "version": "2.0.1",
-  "description": "Seven pixel Clawd sprites. Use one as the working indicator — it walks and plays with its prop while a turn runs, and waves when it waits on you — and any as an add-on button's icon.",
+  "version": "2.0.2",
+  "description": "Seven pixel Clawd sprites. Use one as the working indicator — it walks and plays with its prop while a turn runs, and waves when it waits on you — and any as an agent's icon.",
   "icon": "icon.svg",
-  "screenshots": ["screenshot.png", "costumes.png"],
+  "screenshots": [
+    "screenshot.png",
+    "costumes.png"
+  ],
   "i18n": {
     "zh": {
       "name": "像素 Clawd",
-      "description": "7 个像素小螃蟹 Clawd 素材：可以当对话运行时的 loading（跑的时候走路、摆弄道具，等你确认时停下来挥爪子），也可以当插件按钮的图标，每处用不同的造型。"
+      "description": "7 个像素小螃蟹 Clawd 素材：可以当对话运行时的 loading（跑的时候走路、摆弄道具，等你确认时停下来挥爪子），也可以当角色图标，每处用不同的造型。"
     }
   }
 }
