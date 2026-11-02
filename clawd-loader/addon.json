@@ -1,34 +1,58 @@
 {
-  "name": "像素 Clawd · Pixel Clawd",
+  "name": "Pixel Clawd",
   "version": "1.0.0",
-  "description": "把对话运行中那个 9 个点的 loading 换成像素小螃蟹 Clawd：跑的时候走路、摆弄道具，等你确认时停下来挥爪子，7 个造型可选。Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you; seven costumes.",
+  "description": "Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you. Seven costumes.",
   "icon": "icon.svg",
   "screenshots": ["screenshot.png", "costumes.png"],
   "settings": [
     {
       "key": "costume",
-      "title": "造型 Costume",
+      "title": "Costume",
       "type": "select",
       "default": "clawd",
       "options": [
-        { "value": "clawd", "label": "原版 Clawd · Classic" },
-        { "value": "explore", "label": "海盗 · Pirate" },
-        { "value": "heavy", "label": "侦探 · Detective" },
-        { "value": "careful", "label": "工程师 · Engineer" },
-        { "value": "medium", "label": "厨师 · Chef" },
-        { "value": "light", "label": "赛车手 · Racer" },
-        { "value": "fable", "label": "宇航员 · Astronaut" }
+        { "value": "clawd", "label": "Classic" },
+        { "value": "explore", "label": "Pirate" },
+        { "value": "heavy", "label": "Detective" },
+        { "value": "careful", "label": "Engineer" },
+        { "value": "medium", "label": "Chef" },
+        { "value": "light", "label": "Racer" },
+        { "value": "fable", "label": "Astronaut" }
       ]
     },
     {
       "key": "size",
-      "title": "尺寸 Size",
+      "title": "Size",
       "type": "select",
       "default": "small",
       "options": [
-        { "value": "small", "label": "小 Small (18×12)" },
-        { "value": "medium", "label": "中 Medium (24×16)" }
+        { "value": "small", "label": "Small (18×12)" },
+        { "value": "medium", "label": "Medium (24×16, crisper)" }
       ]
     }
-  ]
+  ],
+  "i18n": {
+    "zh": {
+      "name": "像素 Clawd",
+      "description": "把对话运行中那个 9 个点的 loading 换成像素小螃蟹 Clawd：跑的时候走路、摆弄道具，等你确认时停下来挥爪子。7 个造型可选。",
+      "settings": {
+        "costume": {
+          "title": "造型",
+          "options": {
+            "clawd": "原版 Clawd",
+            "explore": "海盗 · 挥刀",
+            "heavy": "侦探 · 放大镜",
+            "careful": "工程师 · 拧扳手",
+            "medium": "厨师 · 颠锅",
+            "light": "赛车手 · 快跑摇旗",
+            "fable": "宇航员 · 漂浮"
+          }
+        },
+        "size": {
+          "title": "尺寸",
+          "options": { "small": "小（18×12）", "medium": "中（24×16，像素更清楚）" }
+        }
+      }
+    }
+  }
 }

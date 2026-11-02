@@ -137,8 +137,24 @@ export const CSS = `
 @media (prefers-reduced-motion: reduce){.cl-run,.cl-run *,.cl-wait,.cl-wait *{animation:none!important}}
 `;
 
-/** The costume's rects, grouped as savvy-progress nests them: props inside the body (they ride its bob), legs apart. */
-export function Crab({ costume, paused }: { costume: string; paused: boolean }) {
+/** The grid cells a costume covers, hat and prop included: [x, y, width, height]. */
+export function bounds(costume: string): [number, number, number, number] {
+  const c = COSTUMES[costume] ?? COSTUMES.clawd;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  c.draw((x, y, w, h) => {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x + w);
+    y1 = Math.max(y1, y + h);
+  }, "#000");
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+
+/**
+ * The costume's rects, grouped as savvy-progress nests them: props inside the body (they ride its bob), legs apart.
+ * still: no animation at all (the rail face, which is always in sight).
+ */
+export function Crab({ costume, paused, still }: { costume: string; paused: boolean; still?: boolean }) {
   const c = COSTUMES[costume] ?? COSTUMES.clawd;
   const groups = new Map<string, unknown[]>([["bd", []]]);
   const f: Fill = (x, y, w, h, fill, cls = "bd") => {
@@ -154,7 +170,7 @@ export function Crab({ costume, paused }: { costume: string; paused: boolean }) 
   );
   const props = [...groups.keys()].filter((k) => k !== "bd" && k !== "la" && k !== "lb");
   return (
-    <g className={`cl-${costume in COSTUMES ? costume : "clawd"} ${paused ? "cl-wait" : "cl-run"}`}>
+    <g className={`cl-${costume in COSTUMES ? costume : "clawd"} ${still ? "" : paused ? "cl-wait" : "cl-run"}`}>
       <g className="cl-bd">
         {groups.get("bd")}
         {props.map(group)}
