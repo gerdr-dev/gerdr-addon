@@ -85,9 +85,10 @@ export default defineAddon({
       const now = Date.now();
       return (
         <div className="px-1.5">
+          {/* py-1.5 plus each row's py-0.5 = 8px, the same as px-2 at the sides, so the hover fill is even all round */}
           <button
             type="button"
-            className="w-full rounded-md px-2 py-1 text-left hover:bg-accent/60"
+            className="w-full rounded-md px-2 py-1.5 text-left hover:bg-accent/60"
             title={open ? "收起" : "看全部额度和重置时间"}
             onClick={() => setOpen((v) => !v)}
           >
