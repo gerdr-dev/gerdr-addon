@@ -1,8 +1,8 @@
 /// <reference path="../gerdr.d.ts" />
 import { CSS, Crab, bounds } from "./clawds";
 
-// Seven Clawds as sprites: Gerdr draws them only where the user puts them — the working indicator (Settings → 扩展 →
-// 素材) or a rail button (→ 分组) — one costume per place if they like. This add-on used to be the working indicator
+// Seven Clawds as sprites: Gerdr draws them only where the user puts them — the working indicator (Settings → General
+// → Loading 动画), a rail button (→ 扩展 → 分组), an agent's icon — one costume per place if they like. This add-on used to be the working indicator
 // itself plus one button face, both in the costume set here, with a switch to keep Gerdr's dots.
 
 // The costumes in the order they're listed, with their titles per language

@@ -16,7 +16,7 @@ and any of them on an add-on button in the column on the far left.
 
 Installing it changes nothing by itself; the Clawds are sprites you place:
 
-- **Working indicator**: Settings → Add-ons → 素材, pick a costume. "Gerdr's dots" there brings the dots back.
+- **Working indicator**: Settings → General → Loading 动画, pick a costume. "Gerdr's dots" there brings the dots back.
 - **Button icon**: Settings → Add-ons → 分组, click a group's icon, pick a costume under 素材.
 
 Each place can have its own costume.
@@ -28,7 +28,7 @@ Medium is one CSS pixel per grid cell, so its edges are crisper.
 
 ## Requires
 
-Gerdr from November 2026 with Settings → Add-ons → 素材 (`g.slot("sprite")`); an older one shows "update Gerdr
+Gerdr from November 2026 with Settings → General → Loading 动画 (`g.slot("sprite")`); an older one shows "update Gerdr
 first" under the add-on in Settings.
 
 ## Credits
