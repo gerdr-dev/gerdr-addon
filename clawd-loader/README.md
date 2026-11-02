@@ -16,15 +16,11 @@ and any of them on an add-on button in the column on the far left.
 
 Installing it changes nothing by itself; the Clawds are sprites you place:
 
-- **Working indicator**: Settings → General → Loading 动画, pick a costume. "Gerdr's dots" there brings the dots back.
+- **Working indicator**: Settings → General → Loading 动画, pick a costume. Gerdr's own ones are in the same list.
 - **Button icon**: Settings → Add-ons → 分组, click a group's icon, pick a costume under 素材.
+- **Agent icon**: Settings → Agent, edit a role, pick a costume below the built-in icons.
 
 Each place can have its own costume.
-
-## Settings
-
-Settings → Add-ons → Pixel Clawd → **Size as the working indicator**: Small 18×12 (default) or Medium 24×16.
-Medium is one CSS pixel per grid cell, so its edges are crisper.
 
 ## Requires
 

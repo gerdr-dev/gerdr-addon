@@ -16,10 +16,10 @@ const COSTUMES: [string, string, string][] = [
   ["fable", "Astronaut", "宇航员"],
 ];
 
-// The working indicator's scale: the box is the bare crab (grid x 3..27, y 10..26), so every costume's body sits in
-// the same place next to the text; hats and props draw outside it (overflow visible), the way the dots' row has room
-// above and beside. Medium is one CSS pixel per cell, crisper.
-const SCALE: Record<string, number> = { small: 0.75, medium: 1 };
+// In the working indicator the box is the bare crab (grid x 3..27, y 10..26), so every costume's body sits in the
+// same place next to the text; hats and props draw outside it (overflow visible), the way the dots' row has room
+// above and beside. Scaled to the box Gerdr gives (24×16 there: one CSS pixel per cell). No size setting: how big a
+// sprite is belongs to the place that shows it, a picture set has nothing to configure.
 
 export default defineAddon({
   setup(g) {
@@ -36,7 +36,7 @@ export default defineAddon({
             </svg>
           );
         }
-        const s = Math.min(SCALE[g.settings.get<string>("size")] ?? 0.75, width / 24, height / 16);
+        const s = Math.min(width / 24, height / 16);
         return (
           <svg aria-hidden width={24 * s} height={16 * s} viewBox="3 10 24 16" shapeRendering="crispEdges" style={{ overflow: "visible" }}>
             <style>{CSS}</style>
