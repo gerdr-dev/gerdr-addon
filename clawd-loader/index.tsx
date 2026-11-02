@@ -7,7 +7,10 @@ const SCALE: Record<string, number> = { small: 0.75, medium: 1 };
 
 export default defineAddon({
   setup(g) {
-    function Loader({ paused }: { paused: boolean }) {
+    // fallback: Gerdr's own dots. Switched off, hand them back: setup doesn't run again on a settings change, so this
+    // is decided while rendering rather than by not registering (an older Gerdr passes no fallback: nothing shows)
+    function Loader({ paused, fallback }: { paused: boolean; fallback?: any }) {
+      if (g.settings.get<boolean>("loader") === false) return fallback ?? null;
       const s = SCALE[g.settings.get<string>("size")] ?? 0.75;
       const costume = g.settings.get<string>("costume") || "clawd";
       return (

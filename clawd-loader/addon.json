@@ -1,10 +1,17 @@
 {
   "name": "Pixel Clawd",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you. Seven costumes.",
   "icon": "icon.svg",
   "screenshots": ["screenshot.png", "costumes.png"],
   "settings": [
+    {
+      "key": "loader",
+      "title": "Replace the working dots",
+      "description": "Off: keep Gerdr's own dots and use Clawd only as an add-on button face.",
+      "type": "boolean",
+      "default": true
+    },
     {
       "key": "costume",
       "title": "Costume",
@@ -36,6 +43,7 @@
       "name": "像素 Clawd",
       "description": "把对话运行中那个 9 个点的 loading 换成像素小螃蟹 Clawd：跑的时候走路、摆弄道具，等你确认时停下来挥爪子。7 个造型可选。",
       "settings": {
+        "loader": { "title": "替换 loading 动画", "description": "关掉就保留 Gerdr 自己的点点，只把 Clawd 当插件按钮的外观用。" },
         "costume": {
           "title": "造型",
           "options": {
