@@ -1,6 +1,6 @@
 {
   "name": "Pixel Clawd",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you. Seven costumes.",
   "icon": "icon.svg",
   "screenshots": ["screenshot.png", "costumes.png"],
