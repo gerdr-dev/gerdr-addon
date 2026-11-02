@@ -1,0 +1,34 @@
+{
+  "name": "像素 Clawd · Pixel Clawd",
+  "version": "1.0.0",
+  "description": "把对话运行中那个 9 个点的 loading 换成像素小螃蟹 Clawd：跑的时候走路、摆弄道具，等你确认时停下来挥爪子，7 个造型可选。Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you; seven costumes.",
+  "icon": "icon.svg",
+  "screenshots": ["screenshot.png", "costumes.png"],
+  "settings": [
+    {
+      "key": "costume",
+      "title": "造型 Costume",
+      "type": "select",
+      "default": "clawd",
+      "options": [
+        { "value": "clawd", "label": "原版 Clawd · Classic" },
+        { "value": "explore", "label": "海盗 · Pirate" },
+        { "value": "heavy", "label": "侦探 · Detective" },
+        { "value": "careful", "label": "工程师 · Engineer" },
+        { "value": "medium", "label": "厨师 · Chef" },
+        { "value": "light", "label": "赛车手 · Racer" },
+        { "value": "fable", "label": "宇航员 · Astronaut" }
+      ]
+    },
+    {
+      "key": "size",
+      "title": "尺寸 Size",
+      "type": "select",
+      "default": "small",
+      "options": [
+        { "value": "small", "label": "小 Small (18×12)" },
+        { "value": "medium", "label": "中 Medium (24×16)" }
+      ]
+    }
+  ]
+}

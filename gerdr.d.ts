@@ -164,15 +164,35 @@ declare global {
     /**
      * Put a component in one of gerdr's slots. It is re-rendered with gerdr; one that throws is dropped and its error
      * shown in Settings → Add-ons. Several add-ons in one slot: by order, then by add-on id.
-     *   "sidebar"    the left sidebar, above its bottom row (full width, no props). The slot pads above and below
-     *                once for all blocks: give yours horizontal padding only, or two blocks leave a gap between them
+     *   "sidebar"    a block of an add-on panel (288px wide, no props). The user groups blocks into buttons on the
+     *                rail (the strip down the window's left edge) in Settings → 扩展 → 窄条: one button can stack blocks
+     *                of several add-ons (a "today" and two quota meters), in the user's order. Hovering or tapping a
+     *                button opens its blocks beside the rail; on a phone a sheet from the drawer's bottom row. On the
+     *                rail a block stays mounted while its panel is closed. Blocks are padded above and below once per
+     *                panel: give yours horizontal padding only, or two blocks leave a gap between them.
+     *                opts.id: a stable id among your blocks (needed only when you register several and may change their
+     *                order: the user's grouping refers to "addon:id", by default your n-th block). opts.title, opts.icon
+     *                (a lucide icon name, "Gauge"): how the block is listed in that setting; default your add-on's name
+     *                and icon
+     *   "rail"       a button face (no props) the user can pick for any rail button, in the same setting: anything you
+     *                like — a symbol, a few tiny bars, a number. It gets a box 36px wide and at most 28px tall, clipped;
+     *                don't make it interactive (the button around it opens the panel). Use the theme tokens so it reads
+     *                in light and dark. A button whose face wasn't picked uses a face of one of its blocks' add-ons, if
+     *                there is one. opts.id / opts.title as for blocks
      *   "paneTitle"  every pane's title bar, before its ⋯ menu (props: { pane: PaneInfo; tab: TabInfo }); keep it small
      *   "overlay"    mounted once at the app's root and always there (no props, takes no space): where a dialog or
-     *                drawer opened by a command lives. The sidebar slot can't host one: it isn't mounted while the
-     *                sidebar is collapsed or on a phone. Keep the open state outside the component (a variable plus a
-     *                listener) so a command's run() can flip it.
+     *                drawer opened by a command lives. A panel can't host one: it's hidden while closed and on a
+     *                phone it's only there while the drawer is open. Keep the open state outside the component (a
+     *                variable plus a listener) so a command's run() can flip it.
+     *   "loader"     replaces the working indicator: the 3×3 dots before a running turn's "Pondering…" line (a row
+     *                20px tall), and the one shown while a pane starts an agent. Props: paused (the turn waits on the
+     *                user — a permission, a question — so show it's waiting, not working) and className (gerdr's size
+     *                and colour for that spot: text-brand running, text-warn waiting; pass it on to keep them). Only
+     *                the first registration draws; one that throws falls back to the dots.
      */
-    slot(name: "sidebar", component: Component<{}>, opts?: { order?: number }): Dispose;
+    slot(name: "loader", component: Component<{ paused: boolean; className?: string }>, opts?: { order?: number }): Dispose;
+    slot(name: "sidebar", component: Component<{}>, opts?: { order?: number; id?: string; title?: string; icon?: string }): Dispose;
+    slot(name: "rail", component: Component<{}>, opts?: { order?: number; id?: string; title?: string }): Dispose;
     slot(name: "overlay", component: Component<{}>, opts?: { order?: number }): Dispose;
     slot(name: "paneTitle", component: Component<{ pane: PaneInfo; tab: TabInfo }>, opts?: { order?: number }): Dispose;
 
