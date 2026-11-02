@@ -1,51 +1,57 @@
 /// <reference path="../gerdr.d.ts" />
 import { CSS, Crab, bounds } from "./clawds";
 
-// The box is the bare crab (grid x 3..27, y 10..26), so every costume's body sits in the same place next to the
-// text; hats and props draw outside it (overflow visible), the way the dots' row has room above and beside.
+// Seven Clawds as sprites: Gerdr draws them only where the user puts them — the working indicator (Settings → 扩展 →
+// 素材) or a rail button (→ 分组) — one costume per place if they like. This add-on used to be the working indicator
+// itself plus one button face, both in the costume set here, with a switch to keep Gerdr's dots.
+
+// The costumes in the order they're listed, with their titles per language
+const COSTUMES: [string, string, string][] = [
+  ["clawd", "Classic", "原版"],
+  ["explore", "Pirate", "海盗"],
+  ["heavy", "Detective", "侦探"],
+  ["careful", "Engineer", "工程师"],
+  ["medium", "Chef", "厨师"],
+  ["light", "Racer", "赛车手"],
+  ["fable", "Astronaut", "宇航员"],
+];
+
+// The working indicator's scale: the box is the bare crab (grid x 3..27, y 10..26), so every costume's body sits in
+// the same place next to the text; hats and props draw outside it (overflow visible), the way the dots' row has room
+// above and beside. Medium is one CSS pixel per cell, crisper.
 const SCALE: Record<string, number> = { small: 0.75, medium: 1 };
 
 export default defineAddon({
   setup(g) {
-    // fallback: Gerdr's own dots. Switched off, hand them back: setup doesn't run again on a settings change, so this
-    // is decided while rendering rather than by not registering (an older Gerdr passes no fallback: nothing shows)
-    function Loader({ paused, fallback }: { paused: boolean; fallback?: any }) {
-      if (g.settings.get<boolean>("loader") === false) return fallback ?? null;
-      const s = SCALE[g.settings.get<string>("size")] ?? 0.75;
-      const costume = g.settings.get<string>("costume") || "clawd";
-      return (
-        <span aria-hidden className="flex shrink-0 items-center justify-center" style={{ width: 24 * s, height: 16 * s }}>
-          <svg width={24 * s} height={16 * s} viewBox="3 10 24 16" shapeRendering="crispEdges" style={{ overflow: "visible" }}>
+    const sprite = (costume: string) =>
+      function Clawd({ state, width, height }: { state: "idle" | "working" | "waiting"; width: number; height: number }) {
+        // A rail button: standing still (the rail is always in sight, a walking crab there pulls the eye all day),
+        // framed on what the costume covers, one CSS pixel per cell unless the box is smaller
+        if (state === "idle") {
+          const [x, y, w, h] = bounds(costume);
+          const s = Math.min(1, width / w, height / h);
+          return (
+            <svg aria-hidden width={w * s} height={h * s} viewBox={`${x} ${y} ${w} ${h}`} shapeRendering="crispEdges" className="block">
+              <Crab costume={costume} paused={false} still />
+            </svg>
+          );
+        }
+        const s = Math.min(SCALE[g.settings.get<string>("size")] ?? 0.75, width / 24, height / 16);
+        return (
+          <svg aria-hidden width={24 * s} height={16 * s} viewBox="3 10 24 16" shapeRendering="crispEdges" style={{ overflow: "visible" }}>
             <style>{CSS}</style>
-            <Crab costume={costume} paused={paused} />
+            <Crab costume={costume} paused={state === "waiting"} />
           </svg>
-        </span>
-      );
-    }
-    // A face for the rail's add-on buttons (Settings → 扩展 → 分组): the chosen costume standing still — the rail is
-    // always in sight, a walking crab there would pull the eye all day. Framed on what the costume actually covers
-    // (hats and props stick out of the bare crab), one CSS pixel per cell so its edges stay crisp, within the 36×28 box.
-    function Face() {
-      const costume = g.settings.get<string>("costume") || "clawd";
-      const [x, y, w, h] = bounds(costume);
-      return (
-        <svg aria-hidden width={w} height={h} viewBox={`${x} ${y} ${w} ${h}`} shapeRendering="crispEdges" className="block">
-          <Crab costume={costume} paused={false} still />
-        </svg>
-      );
-    }
-    let loader: () => void;
+        );
+      };
+    const off: (() => void)[] = [];
     try {
-      loader = g.slot("loader", Loader);
+      for (const [id, en, zh] of COSTUMES) off.push(g.slot("sprite", sprite(id), { id, title: g.locale() === "zh" ? zh : en }));
     } catch {
-      // Gerdr before the "loader" slot (2026-11) throws "没有这个插槽": say what to do instead
-      throw new Error("这个版本的 Gerdr 还不能替换 loading 动画，请先更新 Gerdr");
+      // Gerdr before sprites (Nov 2026) throws "没有这个插槽"
+      off.forEach((f) => f());
+      throw new Error(g.locale() === "zh" ? "这个版本的 Gerdr 还不支持素材，请先更新 Gerdr" : "This Gerdr can't take sprites yet: update Gerdr first");
     }
-    // Gerdr before rail faces (2026-11) has no such use for the "rail" slot: the loader still works without it
-    let face = () => {};
-    try {
-      face = g.slot("rail", Face, { id: "face", title: "像素 Clawd" });
-    } catch {}
-    return () => (loader(), face());
+    return () => off.forEach((f) => f());
   },
 });

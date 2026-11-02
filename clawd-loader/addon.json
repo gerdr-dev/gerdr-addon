@@ -1,35 +1,13 @@
 {
   "name": "Pixel Clawd",
-  "version": "1.2.0",
-  "description": "Replaces the working dots with a pixel Clawd that walks and plays with its prop while a turn runs, and waves when it waits on you. Seven costumes.",
+  "version": "2.0.0",
+  "description": "Seven pixel Clawd sprites. Use one as the working indicator — it walks and plays with its prop while a turn runs, and waves when it waits on you — and any as an add-on button's icon.",
   "icon": "icon.svg",
   "screenshots": ["screenshot.png", "costumes.png"],
   "settings": [
     {
-      "key": "loader",
-      "title": "Replace the working dots",
-      "description": "Off: keep Gerdr's own dots and use Clawd only as an add-on button face.",
-      "type": "boolean",
-      "default": true
-    },
-    {
-      "key": "costume",
-      "title": "Costume",
-      "type": "select",
-      "default": "clawd",
-      "options": [
-        { "value": "clawd", "label": "Classic" },
-        { "value": "explore", "label": "Pirate" },
-        { "value": "heavy", "label": "Detective" },
-        { "value": "careful", "label": "Engineer" },
-        { "value": "medium", "label": "Chef" },
-        { "value": "light", "label": "Racer" },
-        { "value": "fable", "label": "Astronaut" }
-      ]
-    },
-    {
       "key": "size",
-      "title": "Size",
+      "title": "Size as the working indicator",
       "type": "select",
       "default": "small",
       "options": [
@@ -41,23 +19,10 @@
   "i18n": {
     "zh": {
       "name": "像素 Clawd",
-      "description": "把对话运行中那个 9 个点的 loading 换成像素小螃蟹 Clawd：跑的时候走路、摆弄道具，等你确认时停下来挥爪子。7 个造型可选。",
+      "description": "7 个像素小螃蟹 Clawd 素材：可以当对话运行时的 loading（跑的时候走路、摆弄道具，等你确认时停下来挥爪子），也可以当插件按钮的图标，每处用不同的造型。",
       "settings": {
-        "loader": { "title": "替换 loading 动画", "description": "关掉就保留 Gerdr 自己的点点，只把 Clawd 当插件按钮的外观用。" },
-        "costume": {
-          "title": "造型",
-          "options": {
-            "clawd": "原版 Clawd",
-            "explore": "海盗 · 挥刀",
-            "heavy": "侦探 · 放大镜",
-            "careful": "工程师 · 拧扳手",
-            "medium": "厨师 · 颠锅",
-            "light": "赛车手 · 快跑摇旗",
-            "fable": "宇航员 · 漂浮"
-          }
-        },
         "size": {
-          "title": "尺寸",
+          "title": "当 loading 时的尺寸",
           "options": { "small": "小（18×12）", "medium": "中（24×16，像素更清楚）" }
         }
       }
