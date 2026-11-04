@@ -155,6 +155,8 @@ async function onSlackEvent(ev) {
       text: clean + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: me.url ? `${me.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}` : undefined,
       data: { channel: ev.channel, channelType: ev.channel_type, user: ev.user, userName: who, ts: ev.ts, threadTs, text: clean, files, team: me.team },
+      // Where an answer goes: a subscriber's ctx.events.reply comes back to us as slack.send with this plus its text
+      reply: { kind: "slack.send", data: { channel: ev.channel, threadTs } },
     },
   });
 }

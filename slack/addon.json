@@ -1,30 +1,103 @@
 {
   "name": "Slack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "把 Slack 里给 bot 的私信、@ 它的消息变成 Gerdr 事件（slack/dm、slack/mention、slack/message）。面板用 triggers/ 决定听不听、收到后做什么；面板要回复时发一个 slack.send 事件，由它贴回 Slack。",
   "icon": "icon.svg",
   "service": {
     "command": "node",
-    "args": ["service.mjs"],
-    "events": ["*/slack.send"]
+    "args": [
+      "service.mjs"
+    ],
+    "events": [
+      "*/slack.send"
+    ]
   },
+  "emits": [
+    {
+      "kind": "dm",
+      "title": "Slack 私信",
+      "description": "有人私信你的 Slack bot",
+      "reply": "slack.send"
+    },
+    {
+      "kind": "mention",
+      "title": "Slack 里 @ 了 bot",
+      "description": "频道里有人 @ 你的 bot",
+      "reply": "slack.send"
+    },
+    {
+      "kind": "message",
+      "title": "Slack 频道消息",
+      "description": "bot 所在频道里的其它消息（要在插件设置里打开「频道里不 @ 也收」）",
+      "reply": "slack.send"
+    }
+  ],
   "settings": [
-    { "key": "botToken", "title": "Bot Token", "type": "secret", "default": "", "description": "xoxb-…：Slack app 的 Install to Workspace 之后拿到。" },
-    { "key": "appToken", "title": "App Token", "type": "secret", "default": "", "description": "xapp-…：Basic Information → App-Level Tokens，scope 选 connections:write（Socket Mode 用，不需要公网地址）。" },
-    { "key": "allow", "title": "只收这些人的消息", "type": "string", "default": "", "description": "Slack 用户 ID（U0XXXX），逗号分隔。空着 = 谁的都收。消息内容会交给 agent，强烈建议只放自己。" },
-    { "key": "channelMessages", "title": "频道里不 @ 也收", "type": "boolean", "default": false, "description": "打开后 bot 在的频道里每条消息都发成 slack/message 事件（需要 channels:history / groups:history）。默认只收私信和 @。" },
-    { "key": "maxFileMB", "title": "附件大小上限", "type": "number", "default": 20, "min": 0, "max": 200, "unit": "MB", "description": "消息里的图片、文件下到本机（需要 files:read），路径放进事件。0 = 不下。" }
+    {
+      "key": "botToken",
+      "title": "Bot Token",
+      "type": "secret",
+      "default": "",
+      "description": "xoxb-…：Slack app 的 Install to Workspace 之后拿到。"
+    },
+    {
+      "key": "appToken",
+      "title": "App Token",
+      "type": "secret",
+      "default": "",
+      "description": "xapp-…：Basic Information → App-Level Tokens，scope 选 connections:write（Socket Mode 用，不需要公网地址）。"
+    },
+    {
+      "key": "allow",
+      "title": "只收这些人的消息",
+      "type": "string",
+      "default": "",
+      "description": "Slack 用户 ID（U0XXXX），逗号分隔。空着 = 谁的都收。消息内容会交给 agent，强烈建议只放自己。"
+    },
+    {
+      "key": "channelMessages",
+      "title": "频道里不 @ 也收",
+      "type": "boolean",
+      "default": false,
+      "description": "打开后 bot 在的频道里每条消息都发成 slack/message 事件（需要 channels:history / groups:history）。默认只收私信和 @。"
+    },
+    {
+      "key": "maxFileMB",
+      "title": "附件大小上限",
+      "type": "number",
+      "default": 20,
+      "min": 0,
+      "max": 200,
+      "unit": "MB",
+      "description": "消息里的图片、文件下到本机（需要 files:read），路径放进事件。0 = 不下。"
+    }
   ],
   "i18n": {
     "en": {
       "name": "Slack",
       "description": "Turns direct messages to your Slack bot and @-mentions of it into Gerdr events (slack/dm, slack/mention, slack/message). Panels decide with triggers/ whether to listen and what to do; to answer, a panel emits a slack.send event and this posts it back to Slack.",
       "settings": {
-        "botToken": { "title": "Bot Token", "description": "xoxb-…, from Install to Workspace." },
-        "appToken": { "title": "App Token", "description": "xapp-…: Basic Information → App-Level Tokens, scope connections:write (Socket Mode: no public address needed)." },
-        "allow": { "title": "Only from these people", "description": "Slack user IDs (U0XXXX), comma separated. Empty = everyone. Messages reach agents: list only yourself if you can." },
-        "channelMessages": { "title": "Channel messages without @", "description": "Every message in channels the bot is in becomes a slack/message event (needs channels:history / groups:history). Off: only DMs and mentions." },
-        "maxFileMB": { "title": "Attachment size limit", "unit": "MB", "description": "Images and files in a message are downloaded (needs files:read) and their paths put in the event. 0 = don't." }
+        "botToken": {
+          "title": "Bot Token",
+          "description": "xoxb-…, from Install to Workspace."
+        },
+        "appToken": {
+          "title": "App Token",
+          "description": "xapp-…: Basic Information → App-Level Tokens, scope connections:write (Socket Mode: no public address needed)."
+        },
+        "allow": {
+          "title": "Only from these people",
+          "description": "Slack user IDs (U0XXXX), comma separated. Empty = everyone. Messages reach agents: list only yourself if you can."
+        },
+        "channelMessages": {
+          "title": "Channel messages without @",
+          "description": "Every message in channels the bot is in becomes a slack/message event (needs channels:history / groups:history). Off: only DMs and mentions."
+        },
+        "maxFileMB": {
+          "title": "Attachment size limit",
+          "unit": "MB",
+          "description": "Images and files in a message are downloaded (needs files:read) and their paths put in the event. 0 = don't."
+        }
       }
     }
   }

@@ -20,11 +20,13 @@
 
 ## 回复
 
-发一个 `slack.send` 事件，`data` 写清楚贴到哪：
+每个事件都带着回复地址（`reply`），订阅方不用知道它来自 Slack：
 
 ```ts
-ctx.events.emit({ source: "board", kind: "slack.send", data: { channel: e.data.channel, threadTs: e.data.threadTs, text: "收到，已建任务 t9" } });
+ctx.events.reply(e, "收到，已建任务 t9");   // 贴回那条私信 / 那个 thread
 ```
+
+等价于自己发一个 `slack.send` 事件：`{ kind: "slack.send", data: { channel, threadTs?, text } }`。
 
 ## 面板里怎么接
 
@@ -41,7 +43,7 @@ export async function onSlack(input: { event: GerdrEvent }, ctx: Ctx) {
   const e = input.event;
   // 听不听、怎么处理由面板自己定：读自己的设置 / skill，再决定
   const t = await ctx.sessions.start({ cwd: "~/dev/proj", prompt: e.text ?? "", title: e.title });
-  ctx.events.emit({ source: "board", kind: "slack.send", data: { channel: e.data.channel, threadTs: e.data.threadTs, text: `收到，在处理（${t.id}）` } });
+  ctx.events.reply(e, `收到，在处理（${t.id}）`);
 }
 ```
 
