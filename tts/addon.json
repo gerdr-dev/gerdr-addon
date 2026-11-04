@@ -1,6 +1,6 @@
 {
   "name": "TTS 朗读",
-  "version": "2.1.0",
+  "version": "2.6.0",
   "description": "用云端语音合成朗读消息（小米 MiMo 或 Azure）：点消息旁边的喇叭，读你说的话或 agent 的回复。长回复一段一段合成，第一句很快就开始读。",
   "icon": "icon.svg",
   "screenshots": [],
@@ -86,7 +86,7 @@
       "key": "style",
       "title": "朗读风格",
       "type": "string",
-      "default": "自然、亲切、利落，不要播音腔，语速中等偏快",
+      "default": "自然、亲切、利落，不要播音腔，语速中等偏快，句与句之间停顿短一点",
       "description": "一句话说想要的语气，随文字一起发给模型。清空就是模型默认的读法。"
     },
     {
@@ -142,6 +142,24 @@
       "max": 100,
       "unit": "%",
       "description": "相对正常语速快多少，0 是正常，负数变慢。"
+    },
+    {
+      "key": "scope",
+      "title": "读哪些",
+      "type": "select",
+      "default": "final",
+      "required": true,
+      "options": [
+        {
+          "value": "final",
+          "label": "只读最后一段"
+        },
+        {
+          "value": "all",
+          "label": "整条回复"
+        }
+      ],
+      "description": "agent 的回复：只读最后一段（干完活的总结），跳过过程中说的话；或者全读。只读最后一段时，读着读着点前面的某段，也会从那段接着读下去。你发的消息总是全读。"
     },
     {
       "key": "preview",
@@ -200,6 +218,14 @@
         "azureRate": {
           "title": "Speed",
           "description": "How much faster than normal; 0 is normal, negative is slower."
+        },
+        "scope": {
+          "title": "What to read",
+          "options": {
+            "final": "The last part only",
+            "all": "The whole reply"
+          },
+          "description": "For an agent's reply: only its last part (the summary once the work is done), skipping what it said along the way; or all of it. Reading the last part, a tap on an earlier paragraph still jumps there and reads on. Your own messages are always read whole."
         }
       }
     }

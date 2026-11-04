@@ -1,6 +1,6 @@
 {
   "name": "在聊天里审批",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "agent 等你审批或回答问题、你又不在电脑前时，把它发到你选的聊天（Slack、飞书……任何发 dm 事件的插件）里私信你，你在那边回一个数字，agent 接着跑。",
   "icon": "icon.svg",
   "service": {
@@ -15,6 +15,13 @@
   },
   "settings": [
     {
+      "key": "on",
+      "title": "发到聊天里",
+      "type": "boolean",
+      "default": true,
+      "description": "关掉就不发（已经发出去的还能回）。"
+    },
+    {
       "key": "chat",
       "title": "发到哪个聊天",
       "type": "select",
@@ -23,7 +30,7 @@
         "events": "*/dm",
         "reply": true
       },
-      "description": "列的是装了的、能收发私信的聊天插件。选好后给那边的 bot 私信一句，它就知道发进哪个对话。没有可选的：先装一个，比如 Slack。"
+      "description": "列的是装了的、能收发私信的聊天插件。选好后给那边的 bot 私信一句，它就知道发进哪个对话。"
     },
     {
       "key": "delay",
@@ -34,13 +41,6 @@
       "max": 3600,
       "unit": "秒",
       "description": "在电脑前的话，通常一会儿就点掉了；过了这么久还在等，才发到聊天里。0 = 马上发。"
-    },
-    {
-      "key": "on",
-      "title": "发到聊天里",
-      "type": "boolean",
-      "default": true,
-      "description": "关掉就不发（已经发出去的还能回）。"
     }
   ],
   "i18n": {
@@ -59,7 +59,7 @@
         },
         "chat": {
           "title": "Chat to use",
-          "description": "The chat add-ons installed that send and receive direct messages. Once picked, send that bot a direct message so it knows which conversation to use. Nothing to choose: install one first, e.g. Slack."
+          "description": "The chat add-ons installed that send and receive direct messages. Once picked, send that bot a direct message so it knows which conversation to use."
         }
       }
     }
