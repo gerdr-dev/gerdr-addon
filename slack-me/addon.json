@@ -1,0 +1,89 @@
+{
+  "name": "Slack 私聊（我的账号）",
+  "version": "0.1.0",
+  "description": "收别人发给你本人的 Slack 私聊，变成 Gerdr 事件；回复以你本人的身份发出。不用建 app，用你在 Slack 桌面版的登录（要装 slackctl）。",
+  "icon": "icon.svg",
+  "service": {
+    "command": "node",
+    "args": ["service.mjs"],
+    "events": ["*/slack-me.send"]
+  },
+  "emits": [
+    {
+      "kind": "direct",
+      "title": "Slack 有人私聊我",
+      "description": "别人发给你的私信（含群私聊，可在设置里关掉）",
+      "reply": "slack-me.send"
+    },
+    {
+      "kind": "mention",
+      "title": "Slack 频道里 @ 了我",
+      "description": "频道里有人 @ 你（要在设置里打开）",
+      "reply": "slack-me.send"
+    }
+  ],
+  "settings": [
+    {
+      "key": "workspace",
+      "title": "工作区",
+      "type": "string",
+      "default": "",
+      "description": "从哪个工作区收（地址或名字的一部分，比如 longbridge-pe）。空着 = slackctl 的默认工作区。企业版里私聊是全组织共享的，连一个就够。"
+    },
+    {
+      "key": "groupDMs",
+      "title": "群私聊也收",
+      "type": "boolean",
+      "default": true,
+      "description": "几个人的私聊（不是频道）也发成 slack-me/direct。"
+    },
+    {
+      "key": "mentions",
+      "title": "频道里 @ 我也收",
+      "type": "boolean",
+      "default": false,
+      "description": "频道里 @ 你的消息发成 slack-me/mention。"
+    },
+    {
+      "key": "allow",
+      "title": "只收这些人的消息",
+      "type": "string",
+      "default": "",
+      "description": "Slack 用户 ID（U0XXXX），逗号分隔。空着 = 谁的都收。"
+    },
+    {
+      "key": "maxFileMB",
+      "title": "附件大小上限",
+      "type": "number",
+      "default": 20,
+      "min": 0,
+      "max": 200,
+      "unit": "MB",
+      "description": "消息里的图片、文件下到本机，路径放进事件。0 = 不下。"
+    },
+    {
+      "key": "slackctl",
+      "title": "slackctl 路径",
+      "type": "string",
+      "default": "",
+      "description": "空着 = 在 PATH 和 ~/go/bin、/opt/homebrew/bin 里找。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Slack DMs (my account)",
+      "description": "Direct messages people send you on Slack become Gerdr events; replies are sent as you. No Slack app: it uses your Slack desktop sign-in (needs slackctl).",
+      "settings": {
+        "workspace": {
+          "title": "Workspace",
+          "description": "Which workspace to listen on (part of its address or name, e.g. longbridge-pe). Empty = slackctl's default. On Enterprise Grid DMs are org-wide, so one is enough."
+        },
+        "groupDMs": { "title": "Group DMs too", "description": "Multi-person DMs (not channels) also become slack-me/direct." },
+        "mentions": { "title": "@-mentions in channels", "description": "Channel messages that @-mention you become slack-me/mention." },
+        "allow": { "title": "Only from these people", "description": "Slack user IDs (U0XXXX), comma separated. Empty = everyone." },
+        "maxFileMB": { "title": "Attachment size limit", "unit": "MB", "description": "Images and files are downloaded and their paths put in the event. 0 = don't." },
+        "slackctl": { "title": "slackctl path", "description": "Empty = look on PATH, ~/go/bin and /opt/homebrew/bin." }
+      }
+    }
+  }
+}

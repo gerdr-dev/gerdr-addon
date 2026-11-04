@@ -11,6 +11,8 @@
 | [复制 tab](duplicate-tab) | `prefix+a` / `prefix+i` 把当前 tab 复制到后面 / 前面 |
 | [主题色](theme-color) | 把强调色（用户气泡、按钮、链接、焦点框）换成你挑的颜色，深色主题自动调整 |
 | [像素 Clawd](clawd-loader) | 7 个像素小螃蟹素材：当运行中的 loading（会走路），或当插件按钮的图标 |
+| [Slack](slack) | 发给你的 Slack bot 的私信和 @ 它的消息变成事件，回复以 bot 身份发；要建一个 Slack app，适合当给 agent 下命令的入口 |
+| [Slack 私聊（我的账号）](slack-me) | 别人发给你本人的 Slack 私聊变成事件，回复以你本人身份发；不用建 app，用 Slack 桌面版的登录（要装 slackctl） |
 | [在聊天里审批](remote-answer) | agent 等你审批 / 回答时，发到你私信 bot 的聊天（Slack、飞书…），回个数字它就接着跑 |
 | [TTS 朗读](tts) | 每条消息旁一个喇叭，用小米 MiMo 或 Azure 语音读出来，长回复第一句很快就开始读 |
 | [跑完了通知我](notify-when-done) | 看不见的会话跑完了或在等你时，弹系统通知 |

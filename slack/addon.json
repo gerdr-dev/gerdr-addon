@@ -1,7 +1,7 @@
 {
   "name": "Slack",
-  "version": "0.3.2",
-  "description": "把 Slack 里给 bot 的私信、@ 它的消息变成 Gerdr 事件（slack/dm、slack/mention、slack/message）。面板用 triggers/ 决定听不听、收到后做什么；面板要回复时发一个 slack.send 事件，由它贴回 Slack。",
+  "version": "0.3.3",
+  "description": "收发给你的 Slack bot 的私信和 @ 它的消息，变成 Gerdr 事件；回复以 bot 的身份发出。要在 Slack 后台建一个 app。适合当给 agent 下命令的入口。",
   "icon": "icon.svg",
   "service": {
     "command": "node",
@@ -75,7 +75,7 @@
   "i18n": {
     "en": {
       "name": "Slack",
-      "description": "Turns direct messages to your Slack bot and @-mentions of it into Gerdr events (slack/dm, slack/mention, slack/message). Panels decide with triggers/ whether to listen and what to do; to answer, a panel emits a slack.send event and this posts it back to Slack.",
+      "description": "Messages to your Slack bot (direct messages and @-mentions of it) become Gerdr events; replies are sent as the bot. Needs a Slack app you create. Made for giving agents work from Slack.",
       "settings": {
         "botToken": {
           "title": "Bot Token",
