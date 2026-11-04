@@ -8,8 +8,9 @@
 ## 设置
 
 - **API Key**：在 platform.xiaomimimo.com 申请。
-- **音色**：mimo_default、default_zh、default_en、Mia、Chloe、Milo、Dean。
-- **朗读风格**：可选，一句话描述语气（「语速稍快，平静自然」），作为风格提示发给模型。
+- **音色**：默认茉莉；还有冰糖、苏打、白桦、mimo_default、default_zh、default_en、Mia、Chloe、Milo、Dean。
+- **朗读风格**：一句话描述语气，作为风格提示发给模型。默认「自然、亲切、利落，不要播音腔，语速中等偏快」。
+- **试听**：用当前的音色和风格读一句，改完设置马上能听出对不对。
 - **模型** / **接口地址**：默认 `mimo-v2.5-tts`、`https://api.xiaomimimo.com/v1`；走中转时改地址。
 
 要求 Gerdr 支持 `g.messageAction` 和 `g.audio`。

@@ -60,7 +60,7 @@ export default defineAddon({
         body: {
           model: g.settings.get<string>("model") || "mimo-v2.5-tts",
           messages: [...(style ? [{ role: "user", content: style }] : []), { role: "assistant", content: text }],
-          audio: { format: "wav", voice: g.settings.get<string>("voice") || "mimo_default" },
+          audio: { format: "wav", voice: g.settings.get<string>("voice") || "茉莉" },
         },
       });
       let data: any;
@@ -83,11 +83,19 @@ export default defineAddon({
       }
     }
 
-    return g.messageAction({
+    // Settings → 试听: one sentence with the values just set, so a wrong key / voice shows up right there
+    const sample = zh ? "你好，我是 MiMo。点消息旁边的喇叭，我就把它读给你听。" : "Hi, I'm MiMo. Tap the speaker beside a message and I'll read it to you.";
+    const offPreview = g.settings.onAction("preview", ({ signal }) => g.audio.play(speech(sample, signal), { signal }));
+
+    const offRead = g.messageAction({
       id: "read",
       title: zh ? "朗读" : "Read aloud",
       icon: "Volume2",
       run: (msg, ctx) => g.audio.play(speech(msg.text, ctx.signal), { signal: ctx.signal }),
     });
+    return () => {
+      offPreview();
+      offRead();
+    };
   },
 });
