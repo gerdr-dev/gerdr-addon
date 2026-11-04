@@ -1,9 +1,10 @@
 // What agents wait on you for → the chat you last messaged your bot from; your reply there → the answer, and the
 // agent goes on. No dependencies.
 //
-// It knows no chat. Any add-on that brings direct messages in as `<source>/dm` events with a `reply` address (Slack,
-// Feishu…) is where it talks: it posts through that address (an event of the reply's kind, which the chat add-on
-// posts) and reads your answer from the next dm events of the same conversation (same source and key).
+// It knows no chat. The "chat" setting picks one of the installed add-ons that bring direct messages in as
+// `<source>/dm` events with a `reply` address (Gerdr lists them: optionsFrom). The conversation in it is the one you
+// last wrote the bot from: it posts through that message's reply address (an event of the reply's kind, which the
+// chat add-on posts) and reads your answer from the next dm events of the same conversation (same source and key).
 //
 // Gerdr gives it the requests because addon.json says "pending": true: {"type":"pending"} lists them, taken apart
 // (options with ids, questions), and {"type":"answer"} answers one. See GUIDE.md, "Answering for the person".
@@ -13,7 +14,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const DATA = process.env.GERDR_ADDON_DATA || process.cwd();
-const HOME = path.join(DATA, "home.json");
+const HOMES = path.join(DATA, "homes.json");
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 const log = (...a) => console.error(new Date().toISOString(), ...a);
 
@@ -23,25 +24,35 @@ let zh = /^zh/i.test(process.env.GERDR_LANG || process.env.LANG || "");
 const T = (z, e) => (zh ? z : e);
 
 let settings = { delay: 60, on: true };
-// Where you are: the last dm conversation, { source, key, reply: { kind, data } }. Kept, so a restart still knows.
+// Per chat source, the conversation you last wrote the bot from: { key, reply: { kind, data } }. Kept, so a restart
+// (or switching the "chat" setting back and forth) still knows. home: the one of the chosen chat.
+let homes = {};
 let home = null;
+const pickHome = () => {
+  const h = settings.chat ? homes[settings.chat] : undefined;
+  home = h ? { source: settings.chat, ...h } : null;
+};
 let pending = new Map(); // reqId → the request, as Gerdr last listed it
 const firstSeen = new Map(); // reqId → when this service first saw it (the delay counts from here)
 const queue = []; // reqIds due to be asked, oldest first
 let current = null; // { req, q: index of the question being asked, answers: {} } — the one asked in the chat now
 let timer = null;
 
-readFile(HOME, "utf8").then(
+readFile(HOMES, "utf8").then(
   (t) => {
-    home = JSON.parse(t);
+    homes = JSON.parse(t);
+    pickHome();
     status();
+    ask();
   },
   () => status(),
 );
 
 function status() {
-  const text = !home
-    ? T("私信一下你的 bot（Slack / 飞书…），告诉我往哪发", "Send your bot a direct message (Slack, Feishu…) so I know where to post")
+  const text = !settings.chat
+    ? T("没有能私信的聊天插件：先装一个（比如 Slack），再在设置里选它", "No chat add-on that does direct messages: install one (e.g. Slack), then pick it in the settings")
+    : !home
+    ? T(`给 ${settings.chat} 的 bot 私信一句，我就知道发进哪个对话`, `Send your ${settings.chat} bot a direct message so I know which conversation to use`)
     : current
       ? T(`等你在 ${home.source} 里回复（还有 ${queue.length} 个排着）`, `Waiting for your reply in ${home.source} (${queue.length} more queued)`)
       : T(`发到 ${home.source}`, `Posting to ${home.source}`);
@@ -198,11 +209,20 @@ rl.on("line", (line) => {
       if (m.lang) zh = m.lang === "zh";
       status();
       break;
-    case "settings":
+    case "settings": {
+      const before = settings.chat;
       settings = { ...settings, ...m.settings };
+      pickHome();
+      // Moved to another chat while one was asked in the old: ask it again in the new one
+      if (before !== settings.chat && current) {
+        queue.unshift(current.req.reqId);
+        current = null;
+      }
+      status();
       schedule();
       ask();
       break;
+    }
     case "pending":
       // "asked" is ours: keep it across lists
       for (const r of m.pending ?? []) if (pending.get(r.reqId)?.asked) r.asked = true;
@@ -213,14 +233,16 @@ rl.on("line", (line) => {
       break;
     case "event": {
       const e = m.event;
-      if (!e?.reply?.kind || e.kind !== "dm") break;
-      const same = home && home.source === e.source && home.key === e.key;
+      // Only the chosen chat: a dm to another bot is none of our business
+      if (!e?.reply?.kind || e.kind !== "dm" || e.source !== settings.chat) break;
+      const same = home && home.key === e.key;
       if (!same) {
-        // You wrote from somewhere new: that's where you are now
-        home = { source: e.source, key: e.key, reply: e.reply };
+        // You wrote the bot from another conversation of this chat: that's where you are now
+        homes[e.source] = { key: e.key, reply: e.reply };
+        pickHome();
         mkdir(DATA, { recursive: true })
-          .then(() => writeFile(HOME, JSON.stringify(home)))
-          .catch((err) => log("home not saved", err.message));
+          .then(() => writeFile(HOMES, JSON.stringify(homes)))
+          .catch((err) => log("homes not saved", err.message));
         status();
         if (!current) return ask();
       }
