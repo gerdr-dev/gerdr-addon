@@ -1,0 +1,207 @@
+{
+  "name": "TTS 朗读",
+  "version": "2.1.0",
+  "description": "用云端语音合成朗读消息（小米 MiMo 或 Azure）：点消息旁边的喇叭，读你说的话或 agent 的回复。长回复一段一段合成，第一句很快就开始读。",
+  "icon": "icon.svg",
+  "screenshots": [],
+  "settings": [
+    {
+      "key": "provider",
+      "title": "服务商",
+      "type": "select",
+      "default": "mimo",
+      "required": true,
+      "options": [
+        {
+          "value": "mimo",
+          "label": "小米 MiMo"
+        },
+        {
+          "value": "azure",
+          "label": "Azure 语音"
+        }
+      ],
+      "description": "换了服务商，下面跟着换成它的设置。"
+    },
+    {
+      "key": "apiKey",
+      "title": "API Key",
+      "type": "secret",
+      "default": "",
+      "description": "在 platform.xiaomimimo.com 申请。"
+    },
+    {
+      "key": "voice",
+      "title": "音色",
+      "type": "select",
+      "default": "茉莉",
+      "options": [
+        {
+          "value": "茉莉",
+          "label": "茉莉（女声，知性）"
+        },
+        {
+          "value": "冰糖",
+          "label": "冰糖"
+        },
+        {
+          "value": "苏打",
+          "label": "苏打"
+        },
+        {
+          "value": "白桦",
+          "label": "白桦"
+        },
+        {
+          "value": "mimo_default",
+          "label": "默认（mimo_default）"
+        },
+        {
+          "value": "default_zh",
+          "label": "中文（default_zh）"
+        },
+        {
+          "value": "default_en",
+          "label": "英文（default_en）"
+        },
+        {
+          "value": "Mia",
+          "label": "Mia"
+        },
+        {
+          "value": "Chloe",
+          "label": "Chloe"
+        },
+        {
+          "value": "Milo",
+          "label": "Milo"
+        },
+        {
+          "value": "Dean",
+          "label": "Dean"
+        }
+      ]
+    },
+    {
+      "key": "style",
+      "title": "朗读风格",
+      "type": "string",
+      "default": "自然、亲切、利落，不要播音腔，语速中等偏快",
+      "description": "一句话说想要的语气，随文字一起发给模型。清空就是模型默认的读法。"
+    },
+    {
+      "key": "model",
+      "title": "模型",
+      "type": "select",
+      "default": "mimo-v2.5-tts",
+      "options": [
+        {
+          "value": "mimo-v2.5-tts",
+          "label": "mimo-v2.5-tts"
+        },
+        {
+          "value": "mimo-v2-tts",
+          "label": "mimo-v2-tts"
+        }
+      ]
+    },
+    {
+      "key": "baseURL",
+      "title": "接口地址",
+      "type": "string",
+      "default": "https://api.xiaomimimo.com/v1",
+      "description": "走代理 / 中转时改这里。"
+    },
+    {
+      "key": "azureKey",
+      "title": "Key",
+      "type": "secret",
+      "default": "",
+      "description": "Azure 门户里语音（Speech）资源的「密钥和终结点」页，KEY 1 或 KEY 2。"
+    },
+    {
+      "key": "azureRegion",
+      "title": "区域",
+      "type": "string",
+      "default": "eastasia",
+      "description": "同一页的「位置/区域」，如 eastasia、southeastasia、eastus。"
+    },
+    {
+      "key": "azureVoice",
+      "title": "音色",
+      "type": "string",
+      "default": "zh-CN-XiaoxiaoMultilingualNeural",
+      "description": "语音名，如 zh-CN-XiaoxiaoMultilingualNeural、zh-CN-YunxiNeural、en-US-AvaMultilingualNeural。完整列表见 Azure 的语音库（Voice Gallery）。"
+    },
+    {
+      "key": "azureRate",
+      "title": "语速",
+      "type": "number",
+      "default": 10,
+      "min": -50,
+      "max": 100,
+      "unit": "%",
+      "description": "相对正常语速快多少，0 是正常，负数变慢。"
+    },
+    {
+      "key": "preview",
+      "title": "试听",
+      "type": "action",
+      "label": "播放",
+      "description": "用上面的设置读一句，听听对不对。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "TTS Read Aloud",
+      "description": "Reads messages aloud with cloud speech synthesis (Xiaomi MiMo or Azure): tap the speaker beside a message. Long replies are synthesized piece by piece, so reading starts right away.",
+      "settings": {
+        "provider": {
+          "title": "Provider",
+          "description": "Switch it and the settings below switch to its own.",
+          "options": {
+            "mimo": "Xiaomi MiMo",
+            "azure": "Azure Speech"
+          }
+        },
+        "preview": {
+          "title": "Preview",
+          "label": "Play",
+          "description": "Reads a sentence with the settings above, to check they work."
+        },
+        "apiKey": {
+          "description": "From platform.xiaomimimo.com."
+        },
+        "voice": {
+          "title": "Voice"
+        },
+        "style": {
+          "title": "Style",
+          "description": "The tone you want, in a sentence, sent to the model with the text. Empty: the model's own reading."
+        },
+        "model": {
+          "title": "Model"
+        },
+        "baseURL": {
+          "title": "API address",
+          "description": "Change it to go through a proxy."
+        },
+        "azureKey": {
+          "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource in the Azure portal."
+        },
+        "azureRegion": {
+          "title": "Region",
+          "description": "The Location/Region on the same page, e.g. eastasia, southeastasia, eastus."
+        },
+        "azureVoice": {
+          "title": "Voice",
+          "description": "A voice name, e.g. en-US-AvaMultilingualNeural, zh-CN-XiaoxiaoMultilingualNeural. Full list: Azure's Voice Gallery."
+        },
+        "azureRate": {
+          "title": "Speed",
+          "description": "How much faster than normal; 0 is normal, negative is slower."
+        }
+      }
+    }
+  }
+}
