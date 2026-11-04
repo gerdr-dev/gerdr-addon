@@ -9,7 +9,9 @@
 //                  {"key": "ttl", "title": "缓存时长", "type": "number", "default": 60, "min": 1, "max": 1440, "unit": "分钟"}
 //                type: number / string / text (several lines: a list, a table) / boolean / select (with "options": [{"value": 5, "label": "5 分钟"}]) /
 //                color (a "#rrggbb" string, picked from a palette or typed) / secret (a string the form masks:
-//                tokens, keys; g.settings.get returns it in the clear)
+//                tokens, keys; g.settings.get returns it in the clear) /
+//                link (no value: a button opening a page, {"key": "panel", "title": "控制面板", "type": "link",
+//                "url": "https://…", "label": "打开"}; a service can give the url at run time, see "links" below)
 //   index.ts     the UI half (or what "main" names): export default defineAddon({...}). It may import other files of
 //                the folder; images, sounds and other files it ships are reached with g.asset("icon.png").
 //
@@ -35,13 +37,26 @@
 // gerdr in JSON lines over stdin / stdout:
 //
 //   gerdr → process (stdin)
-//     {"type":"hello","version":"…","addon":"band"}      first line of every start
+//     {"type":"hello","version":"…","addon":"band","lang":"zh"}   first line of every start; lang (zh / en) is the
+//                                                         computer's language, the one Gerdr's own texts are in
 //     {"type":"sessions","sessions":[ServiceSession…]}   the sessions open in the UI: once after hello, then only when
 //                                                         a field changes (a turn streaming tokens is not a change)
 //     {"type":"message","data":…}                        sent by the UI half, g.service.send(data)
+//     {"type":"pending","pending":[ServicePending…]}     only with "service": {…, "pending": true}: what agents wait
+//                                                         on a person for (approvals, questions); after the greeting,
+//                                                         then whenever it changes. Answered elsewhere = gone from it
+//     {"type":"answered","reqId":"…","error":"…"}        how an "answer" went (no error: taken, the agent goes on)
 //   process → gerdr (stdout)
 //     {"type":"status","text":"band connected"}          shown under the add-on in Settings → Add-ons
+//     {"type":"status","text":"…","links":{"panel":"http://127.0.0.1:7858"}}   the addresses of the add-on's "link"
+//                                                         settings, by key: pages the process serves on a port only it
+//                                                         knows. A status line without "links" keeps the last ones
 //     {"type":"message","data":…}                        to g.service.on("message") in every open window
+//     {"type":"answer","session":"…","reqId":"…","optionId":"…"}               approve / reject (an option's id)
+//     {"type":"answer","session":"…","reqId":"…","answers":{"<question id>":["label"]}}   answer the questions
+//     {"type":"answer","session":"…","reqId":"…","skip":true}                  don't answer a question
+//                                                         only with "pending": true — that's the person's power to
+//                                                         approve commands, given when they install the add-on
 //
 // Other stdout lines go to gerdr's log; stderr goes to ~/.gerdr/logs/addons/<id>.log.
 // stdin closing means gerdr is stopping it (quitting, add-on removed): clean up (let go of the device) and exit.
@@ -106,6 +121,8 @@ declare global {
      * the turn's facts (cost, tokens, whether the agent started it itself) and comes once per turn per window.
      */
     on(event: "turn", fn: (turn: TurnRecord) => void): Dispose;
+    /** A new event (g.events), from any source, once per window. */
+    on(event: "event", fn: (e: GerdrEvent) => void): Dispose;
     on(event: "focusChanged", fn: (e: { pane?: PaneInfo; tab?: TabInfo; workspace?: WorkspaceInfo }) => void): Dispose;
 
     /** 弹一条提示。system: true 时用系统通知（mac App / 浏览器通知权限）。 */
@@ -260,6 +277,19 @@ declare global {
      * up. Today's: g.turns({ since: new Date().setHours(0, 0, 0, 0) }). g.on("turn") brings each new one.
      */
     turns(range: { since: number; until?: number }): Promise<TurnRecord[]>;
+
+    /**
+     * Events: things that happened outside a conversation (a review comment, a failed pipeline, a chat message), one
+     * record shape for every source (Gerdr's docs/dev/EVENTS.md). emit one your add-on found (source defaults to
+     * your add-on's id; give a stable id so finding it again doesn't emit it twice); list recent ones; g.on("event")
+     * brings each new one. Panels subscribe with triggers/*.json, sessions with `gerdr event watch`, a service with
+     * addon.json service.events (they come on its stdin as {"type":"event","event":…}; it emits by printing the same).
+     */
+    events: {
+      emit(e: EventInput): Promise<{ event: GerdrEvent; fresh: boolean }>;
+      /** Oldest first. since: unix ms (default: the last 24 hours); on: "source/kind" with * globs; limit: the newest n (default 100). */
+      list(q?: { since?: number; on?: string; key?: string; limit?: number }): Promise<GerdrEvent[]>;
+    };
 
     /** This add-on's own service (addon.json, see the top of this file). Without one, status() is undefined and send rejects. */
     service: {
@@ -450,6 +480,37 @@ declare global {
   }
 
   /** One finished turn (g.turns, g.on("turn")). */
+  /** What g.events.emit takes. */
+  interface EventInput {
+    /** Stable id for this happening ("gitlab:note:123"): one already seen is dropped. Leave out to always emit. */
+    id?: string;
+    /** Who it comes from (default: your add-on's id). [A-Za-z0-9._-], no "/". */
+    source?: string;
+    /** What happened, dotted: "message", "mr.note", "pipeline.failed". */
+    kind: string;
+    /** What it is about (a channel, group/repo!34): what subscribers narrow by. */
+    key?: string;
+    title?: string;
+    text?: string;
+    url?: string;
+    /** Anything else, for code. */
+    data?: unknown;
+    /**
+     * Where an answer goes, when one can: the event kind your service listens for (in service.events) and what it
+     * needs besides the text. A subscriber answers with ctx.events.reply(event, text) — your service then gets
+     * {kind: reply.kind, data: {...reply.data, text}} — without knowing it's you.
+     */
+    reply?: { kind: string; data?: unknown };
+  }
+  interface GerdrEvent extends EventInput {
+    id: string;
+    source: string;
+    /** unix ms */
+    at: number;
+    /** How many triggers deep it was emitted (a trigger's function emitting another event). */
+    depth?: number;
+  }
+
   interface TurnRecord {
     /** When it ended (unix ms). */
     ts: number;
@@ -490,6 +551,8 @@ declare global {
     pid?: number;
     /** The process's own status line ({"type":"status"}). */
     text?: string;
+    /** The "link" settings' addresses the process reported ({"type":"status","links"}), by setting key. */
+    links?: Record<string, string>;
     /** Why it isn't running: command not found, or how it last exited plus the end of its stderr. */
     error?: string;
     restarts?: number;
@@ -509,6 +572,41 @@ declare global {
     error?: string;
     /** When status last changed (unix ms): sort by it to put what just happened first. Doesn't move while a turn runs. */
     since: number;
+  }
+
+  /** One entry of the "pending" line ("service": {"pending": true}): a request waiting on a person. */
+  interface ServicePending {
+    session: string;
+    /** The session's name. */
+    title: string;
+    agent: string;
+    cwd: string;
+    /** Answer with this. */
+    reqId: string;
+    kind: "permission" | "ask";
+    /** One line, in the computer's language ("审批：Bash: rm -rf build", "回答：Which database? (pg / mysql)"). */
+    summary: string;
+    /** When it was asked (unix ms). */
+    at: number;
+    /** In a do-not-disturb group: Gerdr doesn't notify about it, and an add-on that notifies shouldn't either. */
+    muted?: boolean;
+    /** permission: what the agent wants to do. input is the tool's arguments as the agent gave them (a command, a path). */
+    tool?: { title: string; kind?: string; input?: unknown };
+    /** permission: the choices; answer with one's id. kind: allow_once / allow_always / reject_once / reject_always. */
+    options?: { id: string; name: string; kind: string }[];
+    /**
+     * ask: the questions; answer every one by id, with option labels (several only where multiSelect), or your own
+     * text where allowOther. secret: the answer is something like a password.
+     */
+    questions?: {
+      id: string;
+      header?: string;
+      question: string;
+      options?: { label: string; description?: string }[];
+      multiSelect?: boolean;
+      allowOther?: boolean;
+      secret?: boolean;
+    }[];
   }
 
   interface SessionTitleContext {

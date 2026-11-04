@@ -1,0 +1,41 @@
+{
+  "name": "在聊天里审批",
+  "version": "0.1.0",
+  "description": "agent 等你审批或回答问题、你又不在电脑前时，把它发到你最近私信 bot 的那个聊天（Slack、飞书……任何发 dm 事件的插件），你在那边回一个数字，agent 接着跑。",
+  "icon": "icon.svg",
+  "service": {
+    "command": "node",
+    "args": ["service.mjs"],
+    "events": ["*/dm"],
+    "pending": true
+  },
+  "settings": [
+    {
+      "key": "delay",
+      "title": "多久没处理才发",
+      "type": "number",
+      "default": 60,
+      "min": 0,
+      "max": 3600,
+      "unit": "秒",
+      "description": "在电脑前的话，通常一会儿就点掉了；过了这么久还在等，才发到聊天里。0 = 马上发。"
+    },
+    {
+      "key": "on",
+      "title": "发到聊天里",
+      "type": "boolean",
+      "default": true,
+      "description": "关掉就不发（已经发出去的还能回）。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Approve from chat",
+      "description": "When an agent waits for your approval or an answer and you're away, sends it to the chat you last messaged your bot from (Slack, Feishu… any add-on that emits dm events); reply with a number there and the agent goes on.",
+      "settings": {
+        "delay": { "title": "Send after", "unit": "s", "description": "At the computer you usually handle it within moments; only what still waits after this long goes to the chat. 0 = at once." },
+        "on": { "title": "Send to chat", "description": "Off: nothing new is sent (what was sent can still be answered)." }
+      }
+    }
+  }
+}

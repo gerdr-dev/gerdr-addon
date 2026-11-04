@@ -11,6 +11,7 @@
 | [复制 tab](duplicate-tab) | `prefix+a` / `prefix+i` 把当前 tab 复制到后面 / 前面 |
 | [主题色](theme-color) | 把强调色（用户气泡、按钮、链接、焦点框）换成你挑的颜色，深色主题自动调整 |
 | [像素 Clawd](clawd-loader) | 7 个像素小螃蟹素材：当运行中的 loading（会走路），或当插件按钮的图标 |
+| [在聊天里审批](remote-answer) | agent 等你审批 / 回答时，发到你私信 bot 的聊天（Slack、飞书…），回个数字它就接着跑 |
 | [跑完了通知我](notify-when-done) | 看不见的会话跑完了或在等你时，弹系统通知 |
 | [会话标题：每 5 句重起](session-title) | 示例：自己定会话标题怎么起 |
 
