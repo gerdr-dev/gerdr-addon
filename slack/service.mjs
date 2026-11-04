@@ -15,6 +15,22 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 const status = (text) => out({ type: "status", text });
 const log = (...a) => console.error(new Date().toISOString(), ...a);
 
+// Node 22 is the first with a global WebSocket (and fetch long before). An older one must say so in Settings →
+// Add-ons rather than crash: a crash only shows as "exited" and Gerdr restarting it over and over. So it stays up,
+// says what's wrong, connects to nothing, and leaves when Gerdr closes stdin.
+const NEED_NODE = 22;
+const nodeMajor = Number(process.versions.node.split(".")[0]);
+const tooOld =
+  nodeMajor < NEED_NODE
+    ? `需要 Node ${NEED_NODE} 以上，现在用的是 v${process.versions.node}（${process.execPath}）：升级后在设置里关掉再打开这个插件`
+    : typeof WebSocket !== "function" || typeof fetch !== "function"
+      ? `这个 Node（v${process.versions.node}，${process.execPath}）没有内置的 WebSocket / fetch，可能是用参数关掉了：换一个标准的 Node ${NEED_NODE}+`
+      : "";
+if (tooOld) {
+  status(tooOld);
+  log(tooOld);
+}
+
 let settings = {};
 let ws = null;
 let stopping = false;
@@ -79,6 +95,10 @@ function tokensOK() {
 async function connect() {
   clearTimeout(reconnectTimer);
   if (stopping) return;
+  if (tooOld) {
+    status(tooOld);
+    return;
+  }
   if (!tokensOK()) {
     status("在设置里填 Bot Token（xoxb-）和 App Token（xapp-）后连接");
     return;
@@ -239,6 +259,12 @@ async function onGerdrEvent(e) {
 
 // ---- Gerdr ----
 
+// A Gerdr from before add-on services got their settings never sends them: say so instead of waiting silently
+let gotSettings = false;
+setTimeout(() => {
+  if (!gotSettings && !stopping) status(tooOld || "Gerdr 没把设置发过来：这个插件要新版 Gerdr（插件 service 能收到设置的版本），升级 Gerdr 后再开");
+}, 5000).unref();
+
 const rl = createInterface({ input: process.stdin });
 rl.on("line", (line) => {
   let m;
@@ -249,8 +275,10 @@ rl.on("line", (line) => {
   }
   if (m.type === "settings") {
     const prev = settings;
+    const first = !gotSettings;
+    gotSettings = true;
     settings = m.settings ?? {};
-    if (prev.botToken !== settings.botToken || prev.appToken !== settings.appToken) {
+    if (first || prev.botToken !== settings.botToken || prev.appToken !== settings.appToken) {
       ws?.close();
       ws = null;
       backoff = 1000;
