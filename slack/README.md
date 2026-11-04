@@ -11,8 +11,11 @@
 | source/kind | 什么时候 | key |
 |---|---|---|
 | `slack/dm` | 有人私信 bot | 私信频道 id（`D…`） |
-| `slack/mention` | 频道里 @ 了 bot | 频道 id；在 thread 里是 `频道/thread_ts` |
+| `slack/mention` | 频道里 @ 了 bot，或者在 bot 参与过的 thread 里接着说（不用再 @） | `频道/thread_ts`（@ 那条开了 thread，就是它自己的 ts） |
 | `slack/message` | 设置里打开「频道里不 @ 也收」后，bot 所在频道的其它消息 | 同上 |
+
+`key` 就是「这段对话」：同一个私信、同一个 thread 里的后续消息 key 相同，订阅方按它接着处理（任务看板会交给同一个任务）。
+bot 参与过的 thread（被 @ 过、它回复过）记在插件数据目录的 `threads.json`。
 
 `title` 是「谁: 第一行」，`text` 是全文（附件下到本机的路径接在后面），`url` 是消息链接。
 `data`：`{ channel, channelType, user, userName, ts, threadTs, text, files: [{ name, path?, error? }], team }`。

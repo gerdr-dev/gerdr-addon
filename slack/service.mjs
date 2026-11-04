@@ -7,7 +7,7 @@
 // Talks to Gerdr in JSON lines: stdin gets hello / settings / event, stdout sends status / event.
 
 import { createInterface } from "node:readline";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const DATA = process.env.GERDR_ADDON_DATA || process.cwd();
@@ -22,6 +22,26 @@ let me = { user: "", team: "", url: "" }; // auth.test: the bot's own user id, t
 let backoff = 1000;
 let reconnectTimer = null;
 const names = new Map(); // user id → display name (users.info, best effort)
+
+// Threads the bot is part of (it was @-mentioned there, or answered there): "<channel>/<thread_ts>". Messages in
+// them come through without an @, like deva did — that's a conversation going on. Kept in GERDR_ADDON_DATA so a
+// restart doesn't forget them; the newest 2000.
+const THREADS = path.join(DATA, "threads.json");
+let threads = new Set();
+readFile(THREADS, "utf8").then(
+  (t) => (threads = new Set(JSON.parse(t))),
+  () => {},
+);
+function joinThread(channel, ts) {
+  if (!channel || !ts) return;
+  const k = `${channel}/${ts}`;
+  if (threads.has(k)) return;
+  threads.add(k);
+  if (threads.size > 2000) threads = new Set([...threads].slice(-2000));
+  mkdir(DATA, { recursive: true })
+    .then(() => writeFile(THREADS, JSON.stringify([...threads])))
+    .catch((e) => log("threads not saved", e.message));
+}
 
 // ---- Slack Web API ----
 
@@ -131,26 +151,32 @@ async function onSlackEvent(ev) {
 
   const text = ev.text ?? "";
   const mentioned = ev.type === "app_mention" || (me.user && text.includes(`<@${me.user}>`));
+  // In a thread the bot is part of, a message without @ goes on with that conversation: a mention, like the first one
+  const inThread = !!ev.thread_ts && threads.has(`${ev.channel}/${ev.thread_ts}`);
   let kind;
   if (ev.channel_type === "im") kind = "dm";
-  else if (mentioned) kind = "mention";
+  else if (mentioned || inThread) kind = "mention";
   else if (settings.channelMessages) kind = "message";
   else return;
 
+  // Replies go in the message's thread, except a DM's top level, which is a conversation already
+  const threadTs = ev.thread_ts || (kind === "dm" ? undefined : ev.ts);
+  // Before any await: the next message in the thread may already be on its way, and must find it joined
+  if (kind === "mention") joinThread(ev.channel, threadTs);
   const who = await nameOf(ev.user);
   const clean = text.replaceAll(`<@${me.user}>`, "").trim();
   const files = await download(ev);
   // A mention arrives twice (app_mention and message): the same id, so Gerdr keeps one
   const id = `slack:${ev.channel}:${ev.ts}`;
-  // Replies go in the message's thread, except a DM's top level, which is a conversation already
-  const threadTs = ev.thread_ts || (kind === "dm" ? undefined : ev.ts);
   out({
     type: "event",
     event: {
       id,
       kind,
-      // key: the channel, or channel/thread for a message in a thread — subscribe to C0123* for both
-      key: ev.thread_ts ? `${ev.channel}/${ev.thread_ts}` : ev.channel,
+      // key: the conversation, so a follow-up has the same one as what it follows (subscribers continue by it).
+      // A DM channel is one conversation (its top level); in a channel it's the thread, and a mention that starts
+      // one is already its root: channel/<thread_ts or its own ts>. Subscribe to C0123* for a whole channel.
+      key: kind === "dm" && !ev.thread_ts ? ev.channel : `${ev.channel}/${threadTs}`,
       title: `${who}: ${clean.split("\n")[0].slice(0, 80)}`,
       text: clean + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: me.url ? `${me.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}` : undefined,
@@ -203,6 +229,8 @@ async function onGerdrEvent(e) {
   }
   try {
     await api("chat.postMessage", { channel: d.channel, thread_ts: d.threadTs || undefined, text: String(d.text), mrkdwn: true });
+    // Answered in a thread: the bot is part of it now, so what's said next there comes through without an @
+    if (d.threadTs && !String(d.channel).startsWith("D")) joinThread(d.channel, d.threadTs);
   } catch (err) {
     log("post failed", err.message);
     status(`发不出去：${err.message}`);
