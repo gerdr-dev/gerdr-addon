@@ -1,6 +1,6 @@
 {
   "name": "Slack",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "把 Slack 里给 bot 的私信、@ 它的消息变成 Gerdr 事件（slack/dm、slack/mention、slack/message）。面板用 triggers/ 决定听不听、收到后做什么；面板要回复时发一个 slack.send 事件，由它贴回 Slack。",
   "icon": "icon.svg",
   "service": {

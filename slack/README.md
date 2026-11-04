@@ -17,7 +17,7 @@
 `key` 就是「这段对话」：同一个私信、同一个 thread 里的后续消息 key 相同，订阅方按它接着处理（任务看板会交给同一个任务）。
 bot 参与过的 thread（被 @ 过、它回复过）记在插件数据目录的 `threads.json`。
 
-`title` 是「谁: 第一行」，`text` 是全文（附件下到本机的路径接在后面），`url` 是消息链接。
+`actor` 是发消息的人的 member ID（订阅方按它决定谁能派活）。`title` 是「谁: 第一行」，`text` 是全文（附件下到本机的路径接在后面），`url` 是消息链接。
 `data`：`{ channel, channelType, user, userName, ts, threadTs, text, files: [{ name, path?, error? }], team }`。
 `threadTs` 是回复该贴进的 thread（私信顶层为空）。
 

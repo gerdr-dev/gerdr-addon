@@ -197,6 +197,8 @@ async function onSlackEvent(ev) {
       // A DM channel is one conversation (its top level); in a channel it's the thread, and a mention that starts
       // one is already its root: channel/<thread_ts or its own ts>. Subscribe to C0123* for a whole channel.
       key: kind === "dm" && !ev.thread_ts ? ev.channel : `${ev.channel}/${threadTs}`,
+      // Who said it, as Slack knows them: subscribers decide who may ask for work by it (the same field for every source)
+      actor: ev.user,
       title: `${who}: ${clean.split("\n")[0].slice(0, 80)}`,
       text: clean + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: me.url ? `${me.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}` : undefined,
