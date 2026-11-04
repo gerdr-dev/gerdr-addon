@@ -1,6 +1,6 @@
 {
   "name": "MiMo 朗读",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "用小米 MiMo 的语音合成朗读消息：点消息旁边的喇叭，读你说的话或 agent 的回复。长回复一段一段合成，第一句很快就开始读。",
   "icon": "icon.svg",
   "screenshots": [],
@@ -10,7 +10,7 @@
       "title": "API Key",
       "type": "secret",
       "default": "",
-      "description": "在 platform.xiaomimimo.com 申请（就是环境变量 XIAOMI_API_KEY 里的那个）。"
+      "description": "在 platform.xiaomimimo.com 申请。"
     },
     {
       "key": "voice",
@@ -108,7 +108,7 @@
       "description": "Reads messages aloud with Xiaomi MiMo's speech synthesis: tap the speaker beside a message. Long replies are synthesized piece by piece, so reading starts right away.",
       "settings": {
         "apiKey": {
-          "description": "From platform.xiaomimimo.com (the one in XIAOMI_API_KEY)."
+          "description": "From platform.xiaomimimo.com."
         },
         "voice": {
           "title": "Voice"
