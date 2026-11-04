@@ -1,0 +1,68 @@
+{
+  "name": "MiMo 朗读",
+  "version": "1.0.0",
+  "description": "用小米 MiMo 的语音合成朗读消息：点消息旁边的喇叭，读你说的话或 agent 的回复。长回复一段一段合成，第一句很快就开始读。",
+  "icon": "icon.svg",
+  "screenshots": [],
+  "settings": [
+    {
+      "key": "apiKey",
+      "title": "API Key",
+      "type": "secret",
+      "default": "",
+      "description": "在 platform.xiaomimimo.com 申请（就是环境变量 XIAOMI_API_KEY 里的那个）。"
+    },
+    {
+      "key": "voice",
+      "title": "音色",
+      "type": "select",
+      "default": "mimo_default",
+      "options": [
+        { "value": "mimo_default", "label": "默认（mimo_default）" },
+        { "value": "default_zh", "label": "中文（default_zh）" },
+        { "value": "default_en", "label": "英文（default_en）" },
+        { "value": "Mia", "label": "Mia" },
+        { "value": "Chloe", "label": "Chloe" },
+        { "value": "Milo", "label": "Milo" },
+        { "value": "Dean", "label": "Dean" }
+      ]
+    },
+    {
+      "key": "style",
+      "title": "朗读风格",
+      "type": "string",
+      "default": "",
+      "description": "可选，一句话说想要的语气，比如「语速稍快，平静自然」。留空就是模型默认的读法。"
+    },
+    {
+      "key": "model",
+      "title": "模型",
+      "type": "select",
+      "default": "mimo-v2.5-tts",
+      "options": [
+        { "value": "mimo-v2.5-tts", "label": "mimo-v2.5-tts" },
+        { "value": "mimo-v2-tts", "label": "mimo-v2-tts" }
+      ]
+    },
+    {
+      "key": "baseURL",
+      "title": "接口地址",
+      "type": "string",
+      "default": "https://api.xiaomimimo.com/v1",
+      "description": "走代理 / 中转时改这里。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "MiMo Read Aloud",
+      "description": "Reads messages aloud with Xiaomi MiMo's speech synthesis: tap the speaker beside a message. Long replies are synthesized piece by piece, so reading starts right away.",
+      "settings": {
+        "apiKey": { "description": "From platform.xiaomimimo.com (the one in XIAOMI_API_KEY)." },
+        "voice": { "title": "Voice" },
+        "style": { "title": "Style", "description": "Optional: the tone you want in a sentence, e.g. \"a bit fast, calm and natural\". Empty: the model's own reading." },
+        "model": { "title": "Model" },
+        "baseURL": { "title": "API address", "description": "Change it to go through a proxy." }
+      }
+    }
+  }
+}
