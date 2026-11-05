@@ -15,7 +15,10 @@
 //                link (no value: a button opening a page, {"key": "panel", "title": "控制面板", "type": "link",
 //                "url": "https://…", "label": "打开"}; a service can give the url at run time, see "links" below)
 //                action (no value: a button running your g.settings.onAction(key) handler, to try the values above
-//                without leaving the form: {"key": "preview", "title": "试听", "type": "action", "label": "播放"})
+//                without leaving the form: {"key": "preview", "title": "试听", "type": "action", "label": "播放"}) /
+//                icon (a string: picked from the same icons as an agent's — gerdr's glyphs, line icons, sprites other
+//                add-ons brought; "default" is usually a lucide name, {"key": "on", "type": "icon", "default": "Coffee"};
+//                draw the value with <g.ui.Icon icon={…} />)
 //   index.ts     the UI half (or what "main" names): export default defineAddon({...}). It may import other files of
 //                the folder; images, sounds and other files it ships are reached with g.asset("icon.png").
 //
@@ -182,6 +185,12 @@ declare global {
       SheetDescription: Component<{ className?: string; children?: any }>;
       SheetFooter: Component<{ className?: string; children?: any }>;
       SheetClose: Component<{ asChild?: boolean; children?: any }>;
+      /**
+       * Draws an "icon" setting's value: one of gerdr's glyphs / line icons, a sprite another add-on brought
+       * ("sprite:<key>"), or a lucide icon by name ("Coffee"); fallback while it's none of those, or its sprite's
+       * add-on isn't loaded. Size it with className ("size-4"); line icons take the text colour.
+       */
+      Icon: Component<{ icon?: string; className?: string; fallback?: any }>;
       /** Joins class names, later Tailwind classes winning (clsx + tailwind-merge). */
       cn(...classes: any[]): string;
     };
