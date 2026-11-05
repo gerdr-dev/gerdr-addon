@@ -68,13 +68,67 @@ export default defineAddon({
               ? tx(`合盖不休眠：电量 ≤ ${s.lowLine}%，暂时放手`, `Lid awake: battery ≤ ${s.lowLine}%, let go for now`)
               : tx("合盖不休眠：关着（点一下开）", "Lid awake: off (click to turn on)");
 
-    // The rail button's face. It takes the click itself, so a click toggles instead of opening the panel (the panel,
-    // with the details, opens from the button's edge or on a phone's long list; it is there for the why).
+    const animated = (on: boolean) => {
+      const a = g.settings.get<string>("animate") ?? "on";
+      return a === "always" || (a === "on" && on);
+    };
+    const iconOf = (on: boolean) => g.settings.get<string>(on ? "iconOn" : "iconOff") || (on ? "Coffee" : "Moon");
+    const look = (s?: State) =>
+      g.ui.cn(!s || !running() ? "opacity-50" : "", s?.error ? "text-bad" : s?.active ? "bg-brand/15 text-brand hover:bg-brand/25 hover:text-brand" : s?.on ? "bg-warn/15 text-warn" : "");
+
+    // The whole rail button is ours ("railButton" slot): a click toggles, hovering shows the details. Gerdr hands
+    // its own button classes (size, colours, hover) so it sits like its neighbours; the state goes on top.
+    function RailButton({ place, className }: { place: "rail" | "phone"; className: string }) {
+      const s = useState_();
+      const on = !!s?.on;
+      const [open, setOpen] = useState(false);
+      const timer = g.React.useRef(0);
+      // Mouse only: a tap sends pointerenter too, and the tap is the toggle
+      const hover = (v: boolean) => (e: any) => {
+        if (e.pointerType !== "mouse") return;
+        clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setOpen(v), v ? 400 : 200);
+      };
+      useEffect(() => () => clearTimeout(timer.current), []);
+      const Content = g.ui.PopoverContent as any;
+      return (
+        <g.ui.Popover open={open} onOpenChange={setOpen}>
+          <g.ui.PopoverTrigger asChild>
+            <button
+              role="switch"
+              aria-checked={on}
+              aria-label={title(s)}
+              className={g.ui.cn(className, look(s))}
+              onPointerEnter={hover(true)}
+              onPointerLeave={hover(false)}
+              onClick={(e: any) => {
+                e.preventDefault(); // the trigger would open the popup: a click is the switch
+                clearTimeout(timer.current); // the hover that led to the click doesn't pop the details up after it
+                setOpen(false);
+                toggle();
+              }}
+            >
+              <Pic icon={iconOf(on)} className={place === "rail" ? "size-5" : "size-4"} moving={animated(on)} />
+            </button>
+          </g.ui.PopoverTrigger>
+          <Content
+            side={place === "rail" ? "right" : "top"}
+            align={place === "rail" ? "end" : "center"}
+            className="w-72 p-0 py-1.5"
+            onPointerEnter={hover(true)}
+            onPointerLeave={hover(false)}
+            onOpenAutoFocus={(e: any) => e.preventDefault()}
+          >
+            <Panel />
+          </Content>
+        </g.ui.Popover>
+      );
+    }
+
+    // Gerdr before the "railButton" slot: the face of a panel button, taking the click itself
     function Face({ width, height }: { width: number; height: number }) {
       const s = useState_();
       const on = !!s?.on;
-      const icon = g.settings.get<string>(on ? "iconOn" : "iconOff") || (on ? "Coffee" : "Moon");
-      const animate = g.settings.get<string>("animate") ?? "on";
       return (
         <span
           role="switch"
@@ -86,19 +140,10 @@ export default defineAddon({
             toggle();
           }}
           style={{ width, height }}
-          className={g.ui.cn("flex cursor-pointer items-center justify-center", !s || !running() ? "opacity-50" : "")}
+          className="flex cursor-pointer items-center justify-center"
         >
-          {/* The box Gerdr gives is 32×20: a background over all of it reads as a pill, so the "on" mark is a square
-              as tall as the box, centred; the whole box still takes the click */}
-          <span
-            style={{ width: height, height }}
-            className={g.ui.cn(
-              "flex items-center justify-center rounded-md transition-colors",
-              s?.active ? "bg-brand/15 text-brand" : on ? "bg-warn/15 text-warn" : "text-muted-foreground",
-              s?.error ? "text-bad" : "",
-            )}
-          >
-            <Pic icon={icon} className="size-4" moving={animate === "always" || (animate === "on" && on)} />
+          <span style={{ width: height, height }} className={g.ui.cn("flex items-center justify-center rounded-md", look(s) || "text-muted-foreground")}>
+            <Pic icon={iconOf(on)} className="size-4" moving={animated(on)} />
           </span>
         </span>
       );
@@ -173,7 +218,11 @@ export default defineAddon({
     }
     g.slot("settings", Settings);
 
-    g.slot("panel", Panel, { title: tx("合盖不休眠", "Lid awake"), icon: Face, open: "click" });
+    try {
+      g.slot("railButton", RailButton);
+    } catch {
+      g.slot("panel", Panel, { title: tx("合盖不休眠", "Lid awake"), icon: Face, open: "click" });
+    }
     g.command({ id: "lid-awake.toggle", title: tx("合盖不休眠：开 / 关", "Lid awake: toggle"), run: toggle });
     g.settings.onAction("authorize", () => send("authorize"));
     return () => {

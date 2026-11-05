@@ -215,6 +215,12 @@ declare global {
      *                opts.open: "hover" (default) or "click", for a panel you work in rather than glance at.
      *                Gerdr doesn't put several add-ons behind one button: to show other add-ons' blocks together
      *                with yours, copy their code into your add-on (they're small) and turn them off
+     *   "railButton" a whole button of your own on the rail (and in the phone drawer's bottom row), in slot order
+     *                among the panel buttons. Gerdr only gives it the place: what it looks like, its state (on / off,
+     *                a count), what a click or a hover does and any popup (g.ui.Popover) are yours. Props: place
+     *                ("rail": a column 36px wide; "phone": a row 28px tall) and className, Gerdr's own look for a
+     *                button there (size, colours, hover), to put on your <button> so it matches its neighbours. Use
+     *                it for a switch or anything that isn't "open my panel"; for a panel of blocks, "panel" is less work
      *   "paneTitle"  every pane's title bar, before its ⋯ menu (props: { pane: PaneInfo; tab: TabInfo }); keep it small
      *   "overlay"    mounted once at the app's root and always there (no props, takes no space): where a dialog or
      *                drawer opened by a command lives. A panel can't host one: it's hidden while closed and on a
@@ -250,6 +256,7 @@ declare global {
      */
     slot(name: "loader", component: Component<{ paused: boolean; className?: string; fallback?: any }>, opts?: { order?: number }): Dispose;
     slot(name: "panel", component: Component<{}>, opts?: PanelOpts): Dispose;
+    slot(name: "railButton", component: Component<{ place: "rail" | "phone"; className: string }>, opts?: { order?: number; id?: string }): Dispose;
     /** The "panel" slot's old name (blocks used to sit in the left column); still works the same. */
     slot(name: "sidebar", component: Component<{}>, opts?: PanelOpts): Dispose;
     slot(name: "sprite", component: Component<SpriteProps>, opts?: { order?: number; id?: string; title?: string }): Dispose;

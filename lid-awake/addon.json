@@ -1,6 +1,6 @@
 {
   "name": "Lid awake",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "A rail button that keeps the Mac awake even with the lid closed (pmset disablesleep), on and off with one click. Lets go on a low battery; survives Gerdr restarting itself.",
   "icon": "icon.svg",
   "screenshots": [
