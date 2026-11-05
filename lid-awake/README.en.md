@@ -5,9 +5,9 @@ A rail button: click it and the Mac stays awake even with the lid closed; click 
 ![Settings and the icon picker](screenshot.png)
 
 - **The button is the switch**: clicking it doesn't open a panel. While on, it has an accent background; while on but let go because of a low battery, a warning colour. Clicking the button's edge opens a panel with the state, the battery and a switch. The command palette has "Lid awake: toggle" too.
-- **Pick both icons** (Settings → Add-ons → Lid awake → Settings): the same picker as an agent's icon, with built-in glyphs, line icons, and pictures that sprite add-ons bring (Pixel Clawd, for example).
+- **Pick both icons** (Settings → Add-ons → Lid awake → Settings): the same picker as an agent's icon, with built-in glyphs, line icons, and pictures that sprite add-ons bring (Pixel Clawd, for example). Moving pictures move while on by default ("Animated icons": while on / always / never).
 - **Let go at battery**: on battery at or under this percentage, it stops keeping the Mac awake, and resumes once the Mac is plugged in. Default 20%; 0 means never.
-- **Authorize once**: `pmset disablesleep` needs root. Press "Authorize" in the settings and enter your password once on this computer. That installs a sudoers rule allowing only `pmset -a disablesleep 1` / `0` (`/etc/sudoers.d/gerdr_lid_awake`). If Gerdr's Labs or Amphetamine already authorized it, you don't need to.
+- **Authorize once**: `pmset disablesleep` needs root. Press "Authorize" in the settings and enter your password once on this computer (once authorized, that row says so). That installs a sudoers rule allowing only `pmset -a disablesleep 1` / `0` (`/etc/sudoers.d/gerdr_lid_awake`). If Gerdr's Labs or Amphetamine already authorized it, you don't need to.
 
 ## When Gerdr restarts
 

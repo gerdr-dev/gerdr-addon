@@ -49,9 +49,10 @@ export default defineAddon({
 
     // g.ui.Icon draws every kind an "icon" setting can hold (glyphs, sprites from picture add-ons, lucide names);
     // older Gerdr builds lack it, so fall back to a lucide name there
-    function Pic({ icon, className }: { icon: string; className?: string }) {
+    function Pic({ icon, className, moving }: { icon: string; className?: string; moving?: boolean }) {
       const Icon = (g.ui as any).Icon;
-      if (Icon) return <Icon icon={icon} className={className} />;
+      // "working": a sprite plays its own animation (Pixel Clawd walks); "idle" is its still picture
+      if (Icon) return <Icon icon={icon} className={className} state={moving ? "working" : "idle"} />;
       const L = g.icons[icon] ?? g.icons.Coffee;
       return <L className={className} />;
     }
@@ -73,6 +74,7 @@ export default defineAddon({
       const s = useState_();
       const on = !!s?.on;
       const icon = g.settings.get<string>(on ? "iconOn" : "iconOff") || (on ? "Coffee" : "Moon");
+      const animate = g.settings.get<string>("animate") ?? "on";
       return (
         <span
           role="switch"
@@ -91,7 +93,7 @@ export default defineAddon({
             s?.error ? "text-bad" : "",
           )}
         >
-          <Pic icon={icon} className="size-4" />
+          <Pic icon={icon} className="size-4" moving={animate === "always" || (animate === "on" && on)} />
         </span>
       );
     }
@@ -126,6 +128,44 @@ export default defineAddon({
         </div>
       );
     }
+
+    // Settings drawn by us only for the authorize row: a plain "action" button can't say it's already done. The rest
+    // are Gerdr's own fields
+    function Settings({ Field }: { Field: any }) {
+      const s = useState_();
+      return (
+        <div className="space-y-2.5">
+          <Field name="iconOff" />
+          <Field name="iconOn" />
+          <Field name="animate" />
+          <Field name="lowBattery" />
+          <div className="text-[12px]">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1">{tx("授权", "Authorize")}</span>
+              {s?.ready ? (
+                <span className="flex items-center gap-1 text-ok">
+                  <g.icons.Check className="size-3.5" />
+                  {tx("已授权", "Authorized")}
+                </span>
+              ) : (
+                <g.ui.Button size="sm" variant="outline" className="h-7 text-[12px]" disabled={!s} onClick={() => send("authorize")}>
+                  {tx("授权", "Authorize")}
+                </g.ui.Button>
+              )}
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              {s?.ready
+                ? tx("sudo 已放行 pmset disablesleep，不用再输密码。", "sudo already allows pmset disablesleep: no password needed.")
+                : tx(
+                    "装一条 sudoers 规则，只放行 pmset disablesleep 1 / 0；在电脑上输一次密码。",
+                    "Installs a sudoers rule allowing only pmset disablesleep 1 / 0; enter your password once on this computer.",
+                  )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    g.slot("settings", Settings);
 
     g.slot("panel", Panel, { title: tx("合盖不休眠", "Lid awake"), icon: Face, open: "click" });
     g.command({ id: "lid-awake.toggle", title: tx("合盖不休眠：开 / 关", "Lid awake: toggle"), run: toggle });

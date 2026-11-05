@@ -1,13 +1,48 @@
 {
   "name": "Lid awake",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A rail button that keeps the Mac awake even with the lid closed (pmset disablesleep), on and off with one click. Lets go on a low battery; survives Gerdr restarting itself.",
   "icon": "icon.svg",
-  "screenshots": ["screenshot.png"],
-  "service": { "command": "./service.sh" },
+  "screenshots": [
+    "screenshot.png"
+  ],
+  "service": {
+    "command": "./service.sh"
+  },
   "settings": [
-    { "key": "iconOff", "title": "Icon while off", "type": "icon", "default": "Moon" },
-    { "key": "iconOn", "title": "Icon while on", "type": "icon", "default": "Coffee" },
+    {
+      "key": "iconOff",
+      "title": "Icon while off",
+      "type": "icon",
+      "default": "Moon"
+    },
+    {
+      "key": "iconOn",
+      "title": "Icon while on",
+      "type": "icon",
+      "default": "Coffee"
+    },
+    {
+      "key": "animate",
+      "title": "Animated icons",
+      "type": "select",
+      "default": "on",
+      "options": [
+        {
+          "value": "on",
+          "label": "While on"
+        },
+        {
+          "value": "always",
+          "label": "Always"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
+      ],
+      "description": "For moving pictures from sprite add-ons (Pixel Clawd walks); built-in icons stay still."
+    },
     {
       "key": "lowBattery",
       "title": "Let go at battery",
@@ -31,13 +66,29 @@
       "name": "合盖不休眠",
       "description": "rail 上一个按钮，点一下让 Mac 合上盖子也不睡（pmset disablesleep），再点一下关。电量低时自动放手；Gerdr 自己重启时不会断。",
       "settings": {
-        "iconOff": { "title": "关着时的图标" },
-        "iconOn": { "title": "开着时的图标" },
-        "lowBattery": { "title": "电量低于多少放手", "description": "用电池且电量 ≤ 这个数时不再挡着睡眠（插上电自动回来）。0 = 一直不放手。" },
+        "iconOff": {
+          "title": "关着时的图标"
+        },
+        "iconOn": {
+          "title": "开着时的图标"
+        },
+        "lowBattery": {
+          "title": "电量低于多少放手",
+          "description": "用电池且电量 ≤ 这个数时不再挡着睡眠（插上电自动回来）。0 = 一直不放手。"
+        },
         "authorize": {
           "title": "授权",
           "label": "授权",
           "description": "装一条 sudoers 规则，只放行 pmset disablesleep 1 / 0；在电脑上输一次密码。Gerdr 实验室或 Amphetamine 已经授权过就不用。"
+        },
+        "animate": {
+          "title": "动态图标",
+          "options": {
+            "on": "开着时动",
+            "always": "一直动",
+            "never": "不动"
+          },
+          "description": "素材扩展里会动的图（比如像素 Clawd 会走路）；内置图标不动。"
         }
       }
     }

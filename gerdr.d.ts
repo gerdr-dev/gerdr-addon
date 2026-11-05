@@ -188,9 +188,10 @@ declare global {
       /**
        * Draws an "icon" setting's value: one of gerdr's glyphs / line icons, a sprite another add-on brought
        * ("sprite:<key>"), or a lucide icon by name ("Coffee"); fallback while it's none of those, or its sprite's
-       * add-on isn't loaded. Size it with className ("size-4"); line icons take the text colour.
+       * add-on isn't loaded. Size it with className ("size-4"); line icons take the text colour. state: what a sprite
+       * is shown doing — "idle" (default: still) or "working" / "waiting" (the sprite's own animation, if it has one).
        */
-      Icon: Component<{ icon?: string; className?: string; fallback?: any }>;
+      Icon: Component<{ icon?: string; className?: string; fallback?: any; state?: "idle" | "working" | "waiting" }>;
       /** Joins class names, later Tailwind classes winning (clsx + tailwind-merge). */
       cn(...classes: any[]): string;
     };
