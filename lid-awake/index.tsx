@@ -78,7 +78,10 @@ export default defineAddon({
 
     // The whole rail button is ours ("railButton" slot): a click toggles, hovering shows the details. Gerdr hands
     // its own button classes (size, colours, hover) so it sits like its neighbours; the state goes on top.
-    function RailButton({ place, className }: { place: "rail" | "phone"; className: string }) {
+    // Gerdr gives one fixed side: width on the rail (a column), height in the phone drawer's row. A square button
+    // either way.
+    function RailButton({ width, height, className }: { width?: number; height?: number; className: string }) {
+      const side = width ?? height ?? 36;
       const s = useState_();
       const on = !!s?.on;
       const [open, setOpen] = useState(false);
@@ -98,7 +101,8 @@ export default defineAddon({
               role="switch"
               aria-checked={on}
               aria-label={title(s)}
-              className={g.ui.cn(className, look(s))}
+              style={{ width: side, height: side }}
+              className={g.ui.cn("flex items-center justify-center", className, look(s))}
               onPointerEnter={hover(true)}
               onPointerLeave={hover(false)}
               onClick={(e: any) => {
@@ -108,12 +112,12 @@ export default defineAddon({
                 toggle();
               }}
             >
-              <Pic icon={iconOf(on)} className={place === "rail" ? "size-5" : "size-4"} moving={animated(on)} />
+              <Pic icon={iconOf(on)} className={side >= 32 ? "size-5" : "size-4"} moving={animated(on)} />
             </button>
           </g.ui.PopoverTrigger>
           <Content
-            side={place === "rail" ? "right" : "top"}
-            align={place === "rail" ? "end" : "center"}
+            side={width ? "right" : "top"}
+            align={width ? "end" : "center"}
             className="w-72 p-0 py-1.5"
             onPointerEnter={hover(true)}
             onPointerLeave={hover(false)}
