@@ -86,14 +86,20 @@ export default defineAddon({
             toggle();
           }}
           style={{ width, height }}
-          className={g.ui.cn(
-            "flex cursor-pointer items-center justify-center rounded-md transition-colors",
-            !s || !running() ? "opacity-50" : "",
-            s?.active ? "bg-brand/15 text-brand" : on ? "bg-warn/15 text-warn" : "text-muted-foreground",
-            s?.error ? "text-bad" : "",
-          )}
+          className={g.ui.cn("flex cursor-pointer items-center justify-center", !s || !running() ? "opacity-50" : "")}
         >
-          <Pic icon={icon} className="size-4" moving={animate === "always" || (animate === "on" && on)} />
+          {/* The box Gerdr gives is 32×20: a background over all of it reads as a pill, so the "on" mark is a square
+              as tall as the box, centred; the whole box still takes the click */}
+          <span
+            style={{ width: height, height }}
+            className={g.ui.cn(
+              "flex items-center justify-center rounded-md transition-colors",
+              s?.active ? "bg-brand/15 text-brand" : on ? "bg-warn/15 text-warn" : "text-muted-foreground",
+              s?.error ? "text-bad" : "",
+            )}
+          >
+            <Pic icon={icon} className="size-4" moving={animate === "always" || (animate === "on" && on)} />
+          </span>
         </span>
       );
     }
