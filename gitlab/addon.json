@@ -1,0 +1,44 @@
+{
+  "name": "GitLab MR",
+  "version": "0.1.0",
+  "description": "报告有人在等的 MR 现在的状态：开着还是合并了、流水线、别人的意见有几条、冲突、要不要变基、能不能合。会话用 gerdr wait、面板用带 until 的 trigger 等它满足条件，晚一点等也不会错过。只查有人在等的 MR，没人等就什么都不查；哪个 GitLab 都行，用 glab 的登录。",
+  "icon": "icon.svg",
+  "service": {
+    "command": "node",
+    "args": [
+      "service.mjs"
+    ]
+  },
+  "i18n": {
+    "en": {
+      "name": "GitLab MR",
+      "description": "Reports the state of the MRs someone waits on: open or merged, the pipeline, how many review comments, conflicts, rebase needed, mergeable. Sessions wait with gerdr wait, panels with a trigger that has until; waiting late misses nothing. Looks only at MRs waited on, nothing when nobody waits; any GitLab, with glab's logins."
+    }
+  },
+  "states": [
+    {
+      "source": "gitlab",
+      "title": "GitLab MR",
+      "description": "一个 MR 现在的样子。条件是 JS 表达式，每个字段是一个变量",
+      "key": "<GitLab 地址>/<项目路径>!<MR 号>，照 MR 的网址写：gitlab.example.com/group/repo!34",
+      "fields": {
+        "state": "opened / merged / closed / locked",
+        "draft": "是不是 draft（true / false）",
+        "pipeline": "head 流水线：none / created / pending / running / success / failed / canceled / skipped / manual",
+        "pipeline_id": "head 流水线的 id（出了新流水线就变）",
+        "reviews": "别人（不是 glab 登录的你）留的评论条数",
+        "unresolved": "还没解决的讨论个数",
+        "last_note": "别人最新一条评论的 id（有新评论就变）",
+        "conflict": "和目标分支有冲突（true / false）",
+        "need_rebase": "落后目标分支、GitLab 要先变基才能合（true / false）",
+        "mergeable": "GitLab 说现在可以合并：流水线、讨论、批准规则都满足了（true / false）",
+        "approvals": "批准的人数",
+        "head": "head 提交的 sha（推了新提交就变）",
+        "target": "目标分支",
+        "me": "glab 登录的是谁（GitLab 用户名）：「别人」就是 author != me",
+        "notes": "最新的 100 条评论（新的在前），每条 {id, author, body（前 300 字）, resolvable, resolved, path, line, created}；过滤用：notes.some(n => n.author != me && n.resolvable && !n.resolved)"
+      },
+      "poll": 60
+    }
+  ]
+}
