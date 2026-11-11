@@ -2,16 +2,17 @@
 // you. No Slack app: it uses the session the Slack desktop app is signed in with, which slackctl imports
 // (`slackctl auth import-desktop` → ~/.config/agent-slack/credentials.json: an xoxc token plus the d cookie).
 //
-// slackctl has no way to listen, only one-off commands, so receiving is done here: the same credentials open Slack's
-// real-time socket (rtm.connect, what the desktop client and wee-slack use). Measured on an Enterprise Grid: a DM
-// arrives on the connection of any of its workspaces (DMs are org-wide), and the enterprise address itself refuses
-// rtm.connect (enterprise_is_restricted) — so one connection, to one workspace, is enough and the right one.
+// Receiving is `slackctl listen` (v0.3.0+): Slack's real-time socket (rtm.connect, what the desktop client uses) as
+// JSON lines, kept alive and reconnected by slackctl. Measured on an Enterprise Grid: a DM arrives on the connection of
+// any of its workspaces (DMs are org-wide), and the enterprise address itself refuses rtm.connect
+// (enterprise_is_restricted) — so one listener, on one workspace, is enough and the right one.
 // Sending goes through `slackctl message send`, so what the add-on posts is exactly what an agent with slackctl would.
+// The same credentials are still read here for the few Web API calls listen doesn't cover (names, files, long text).
 //
 // Talks to Gerdr in JSON lines: stdin gets hello / settings / event, stdout sends status / event.
 
 import { createInterface } from "node:readline";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import os from "node:os";
@@ -25,25 +26,23 @@ const log = (...a) => console.error(new Date().toISOString(), ...a);
 let zh = true;
 const T = (z, e) => (zh ? z : e);
 
-// Node 22 is the first with a global WebSocket. An older one says so in Settings → Add-ons rather than crash-looping.
-const NEED_NODE = 22;
+// Node 18 is the first with a global fetch. An older one says so in Settings → Add-ons rather than crash-looping.
+const NEED_NODE = 18;
 const tooOld = () =>
-  Number(process.versions.node.split(".")[0]) < NEED_NODE || typeof WebSocket !== "function"
+  Number(process.versions.node.split(".")[0]) < NEED_NODE || typeof fetch !== "function"
     ? T(
-        `需要 Node ${NEED_NODE} 以上（带内置 WebSocket），现在是 v${process.versions.node}（${process.execPath}）`,
-        `Needs Node ${NEED_NODE}+ (with a built-in WebSocket); this is v${process.versions.node} (${process.execPath})`,
+        `需要 Node ${NEED_NODE} 以上，现在是 v${process.versions.node}（${process.execPath}）`,
+        `Needs Node ${NEED_NODE}+; this is v${process.versions.node} (${process.execPath})`,
       )
     : "";
 
 let settings = {};
-let ws = null; // the open socket
-let ws_ = null; // { url, name, token, cookie }: the workspace we're connected to
+let proc = null; // the running `slackctl listen`
+let ws_ = null; // { url, name, token, cookie }: the workspace we listen on
 let me = "";
 let stopping = false;
 let backoff = 1000;
 let reconnectTimer = null;
-let pingTimer = null;
-let lastFrame = 0;
 let lastImport = 0;
 const names = new Map(); // user id → display name
 const kinds = new Map(); // channel id → "im" | "mpim" | "channel"
@@ -139,8 +138,7 @@ async function nameOf(user) {
   return n;
 }
 
-// The socket's message events don't say what kind of conversation they're in. A D… id is always a DM; anything else
-// is asked once.
+// listen only flags D… DMs; a group DM it lets through (or a channel @-mention) is told apart here, asked once per channel.
 async function kindOf(channel) {
   if (channel.startsWith("D")) return "im";
   if (kinds.has(channel)) return kinds.get(channel);
@@ -153,21 +151,33 @@ async function kindOf(channel) {
   return k;
 }
 
-// ---- the connection ----
+// ---- the connection: `slackctl listen` ----
+
+// `listen` came in slackctl v0.3.0; an older one says so instead of failing on every start
+const listenOK = new Map(); // slackctl path → has listen
+async function hasListen(bin) {
+  if (!listenOK.has(bin)) listenOK.set(bin, await slackctl(["listen", "--help"]).then(() => true, () => false));
+  return listenOK.get(bin);
+}
+
+const INSTALL = "go install github.com/cluas/slackctl/cmd/slackctl@latest";
 
 async function connect() {
   clearTimeout(reconnectTimer);
-  clearInterval(pingTimer);
   if (stopping) return;
   const old = tooOld();
   if (old) return status(old);
-  if (!(await slackctlPath())) {
+  const bin = await slackctlPath();
+  if (!bin) {
     return status(
       T(
-        "找不到 slackctl：先装（go install github.com/cluas/slackctl/cmd/slackctl@latest，或 brew tap cluas/tap && brew install slackctl），或在设置里填它的路径",
-        "slackctl not found: install it (go install github.com/cluas/slackctl/cmd/slackctl@latest, or brew tap cluas/tap && brew install slackctl), or set its path",
+        `找不到 slackctl：先装（${INSTALL}，或 brew tap cluas/tap && brew install slackctl），或在设置里填它的路径`,
+        `slackctl not found: install it (${INSTALL}, or brew tap cluas/tap && brew install slackctl), or set its path`,
       ),
     );
+  }
+  if (!(await hasListen(bin))) {
+    return status(T(`slackctl 太旧，没有 listen（要 v0.3.0 以上）：${INSTALL}`, `slackctl is too old to listen (needs v0.3.0+): ${INSTALL}`));
   }
   try {
     try {
@@ -178,47 +188,66 @@ async function connect() {
       if (!(await importDesktop())) throw e;
       ws_ = await pickWorkspace();
     }
-    const a = await api("auth.test");
-    me = a.user_id;
-    const r = await api("rtm.connect");
-    const sock = new WebSocket(r.url, { headers: { Cookie: ws_.cookie } });
-    ws = sock;
-    let id = 0;
-    sock.onopen = () => {
-      backoff = 1000;
-      lastFrame = Date.now();
-      status(T(`已连上 ${ws_.name}（${a.user}）`, `Connected to ${ws_.name} (${a.user})`));
-      log("connected", ws_.url, me);
-      // Slack drops a socket that goes quiet without saying so: ping, and give up on one that stopped answering
-      pingTimer = setInterval(() => {
-        if (Date.now() - lastFrame > 90_000) return sock.close();
-        sock.send(JSON.stringify({ id: ++id, type: "ping" }));
-      }, 30_000);
-    };
-    sock.onmessage = (m) => {
-      lastFrame = Date.now();
-      onFrame(sock, m.data);
-    };
-    sock.onclose = () => {
-      // A socket replaced on purpose (settings changed) isn't a disconnection: the new one is already on its way
-      if (ws !== sock) return;
-      clearInterval(pingTimer);
-      ws = null;
-      if (!stopping) later(T("连接断了，重连中…", "Disconnected, reconnecting…"));
-    };
-    sock.onerror = (e) => log("socket error", e?.message ?? e);
   } catch (e) {
     log("connect failed", e.message);
-    if (e instanceof AuthError) {
+    return later(T(`连不上：${e.message}`, `Can't connect: ${e.message}`));
+  }
+
+  // DMs, group DMs and @-mentions only, no bots: listen drops the rest of the workspace's traffic itself. It keeps the
+  // socket alive and reconnects on its own; it exits only when it can't go on (sign-in rejected, Slack refusing).
+  const p = spawn(bin, ["listen", "--workspace", ws_.url, "--mentions-or-dms", "--include-bots=false"], { stdio: ["ignore", "pipe", "pipe"] });
+  proc = p;
+  let ended = ""; // "auth" | "refused": the last control line before it exits
+  let lastErr = "";
+  createInterface({ input: p.stdout }).on("line", (line) => {
+    let f;
+    try {
+      f = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (f.type === "_connected" || f.type === "_reconnected") {
+      backoff = 1000;
+      me = f.self?.id ?? me;
+      status(T(`已连上 ${ws_.name}（${f.self?.name ?? me}）`, `Connected to ${ws_.name} (${f.self?.name ?? me})`));
+      log(f.type, ws_.url, me);
+    } else if (f.type === "_auth_error") ended = "auth";
+    else if (f.type === "_connect_error") ended = "refused";
+    if (f.type?.startsWith("_")) {
+      if (f.error) lastErr = f.error;
+      return;
+    }
+    if (f.type === "message" && p === proc) onMessage(f).catch((e) => log("message failed", e.message));
+  });
+  createInterface({ input: p.stderr }).on("line", (line) => {
+    log("slackctl:", line);
+    if (line.trim()) lastErr = line.trim();
+  });
+  p.on("error", (e) => (lastErr = e.message));
+  p.on("close", async (code) => {
+    // A listener replaced on purpose (settings changed, shutting down) isn't a disconnection
+    if (proc !== p || stopping) return;
+    proc = null;
+    log("slackctl listen exited", code, ended, lastErr);
+    if (ended === "auth") {
       const again = await importDesktop().catch((err) => (log("import failed", err.message), false));
       if (again) return later(T("登录过期，已从 Slack 桌面版重新导入，重连中…", "Sign-in expired; imported again from Slack desktop, reconnecting…"), 1000);
       return later(
-        T(`登录失效（${e.message}）：打开 Slack 桌面版登录后会自动重试`, `Sign-in no longer valid (${e.message}): sign in to Slack desktop, it retries by itself`),
+        T(`登录失效（${lastErr}）：打开 Slack 桌面版登录后会自动重试`, `Sign-in no longer valid (${lastErr}): sign in to Slack desktop, it retries by itself`),
         10 * 60_000,
       );
     }
-    later(T(`连不上：${e.message}`, `Can't connect: ${e.message}`));
-  }
+    if (ended === "refused") {
+      return later(T(`Slack 不让这个工作区实时连接（${lastErr}）：在设置里换一个工作区`, `Slack refuses a real-time connection here (${lastErr}): pick another workspace in settings`), 10 * 60_000);
+    }
+    later(T(`连接断了（${lastErr || code}），重连中…`, `Disconnected (${lastErr || code}), reconnecting…`));
+  });
+}
+
+function stopListen() {
+  const p = proc;
+  proc = null;
+  p?.kill();
 }
 
 function later(text, wait) {
@@ -226,18 +255,6 @@ function later(text, wait) {
   clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(connect, wait ?? backoff);
   if (wait === undefined) backoff = Math.min(backoff * 2, 60_000);
-}
-
-function onFrame(sock, raw) {
-  let f;
-  try {
-    f = JSON.parse(raw);
-  } catch {
-    return;
-  }
-  // Slack is moving this connection: take a new one
-  if (f.type === "goodbye") return sock.close();
-  if (f.type === "message") onMessage(f).catch((e) => log("message failed", e.message));
 }
 
 // ---- Slack → events ----
@@ -248,23 +265,32 @@ const allowList = () =>
     .map((x) => x.trim())
     .filter(Boolean);
 
+// A listen line: { type: "message", subtype?, channel, ts, thread_ts?, user, bot_id?, text, from_self, is_mention, is_dm }.
+// It has no files and cuts text at 2000 characters, so a message that may have either is read again in full.
+const MAX_LISTEN_TEXT = 2000;
+
 async function onMessage(ev) {
-  // Edits, deletions, joins… aren't someone saying something; files and thread broadcasts are
-  if (ev.subtype && ev.subtype !== "file_share" && ev.subtype !== "thread_broadcast") return;
+  // listen already drops edits, deletions, joins…; files, thread broadcasts and /me are someone saying something
+  if (ev.subtype && !["file_share", "thread_broadcast", "me_message"].includes(ev.subtype)) return;
   // Bots (including a Gerdr bot answering in its own DM) and what you say yourself aren't messages *to* you
-  if (ev.bot_id || !ev.user || ev.user === me || !ev.channel || !ev.ts) return;
+  if (ev.bot_id || ev.from_self || !ev.user || ev.user === me || !ev.channel || !ev.ts) return;
   const allow = allowList();
   if (allow.length && !allow.includes(ev.user)) return;
 
-  const text = ev.text ?? "";
-  const ck = await kindOf(ev.channel);
+  const ck = ev.is_dm ? "im" : await kindOf(ev.channel);
   let kind;
   if (ck === "im") kind = "direct";
   else if (ck === "mpim") {
     if (settings.groupDMs === false) return;
     kind = "direct";
-  } else if (settings.mentions && text.includes(`<@${me}>`)) kind = "mention";
+  } else if (settings.mentions && ev.is_mention) kind = "mention";
   else return;
+
+  if (ev.subtype === "file_share" || !ev.text || [...ev.text].length >= MAX_LISTEN_TEXT) {
+    const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
+    if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
+  }
+  const text = ev.text ?? "";
 
   // Replies go in the message's thread, except a DM's top level, which is a conversation already
   const threadTs = ev.thread_ts || (kind === "direct" ? undefined : ev.ts);
@@ -286,6 +312,15 @@ async function onMessage(ev) {
       reply: { kind: "slack-me.send", data: { channel: ev.channel, threadTs } },
     },
   });
+}
+
+// One message as Slack stores it: a thread reply only shows up under its thread, anything else in the history
+async function fullMessage(channel, ts, threadTs) {
+  const j =
+    threadTs && threadTs !== ts
+      ? await api("conversations.replies", { channel, ts: threadTs, oldest: ts, latest: ts, inclusive: "true", limit: "5" })
+      : await api("conversations.history", { channel, oldest: ts, latest: ts, inclusive: "true", limit: "1" });
+  return (j.messages ?? []).find((m) => m.ts === ts) ?? null;
 }
 
 async function download(ev) {
@@ -351,9 +386,7 @@ rl.on("line", (line) => {
     gotSettings = true;
     settings = m.settings ?? {};
     if (first || prev.workspace !== settings.workspace || prev.slackctl !== settings.slackctl) {
-      const s = ws;
-      ws = null;
-      s?.close();
+      stopListen();
       backoff = 1000;
       connect();
     }
@@ -364,7 +397,6 @@ rl.on("line", (line) => {
 rl.on("close", () => {
   stopping = true;
   clearTimeout(reconnectTimer);
-  clearInterval(pingTimer);
-  ws?.close();
+  stopListen();
   setTimeout(() => process.exit(0), 300);
 });

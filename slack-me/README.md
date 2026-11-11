@@ -10,10 +10,11 @@
 
 ## 准备（一次）
 
-1. 装 slackctl：`go install github.com/cluas/slackctl/cmd/slackctl@latest`（或 `brew tap cluas/tap && brew install slackctl`）。
+1. 装 slackctl **v0.3.0 以上**（收消息靠它的 `listen`）：`go install github.com/cluas/slackctl/cmd/slackctl@latest`（或 `brew tap cluas/tap && brew install slackctl`）。
+   版本太旧时插件状态会写明要升级。
 2. 电脑上装着并登录了 Slack 桌面版。插件第一次启动时会自己跑 `slackctl auth import-desktop`，
    macOS 可能弹一次钥匙串授权，点「允许」。也可以先手动跑一遍。
-3. 需要 Node 22 以上。
+3. 需要 Node 18 以上。
 4. 让 agent 也会用 slackctl（读 thread、搜消息、看历史）：装 slackctl 自带的 skill，
    `npx skills add cluas/slackctl -g`（或把它仓库里的 `skills/slackctl` 拷到 `~/.claude/skills/` 和 `~/.agents/skills/`）。
    插件只把消息变成事件、帮你回复；agent 在会话里要主动读 Slack，靠的是这份 skill。不装的话 agent 不知道本机有 slackctl。
@@ -42,7 +43,10 @@ ctx.events.reply(e, "收到，晚点看");   // 以你本人的身份贴回那�
 
 ## 怎么做到的
 
-slackctl 只有一次性的命令（发、列、搜），没有「监听」。插件用同一份登录连 Slack 的实时连接（`rtm.connect`，桌面版和 wee-slack 用的那个），收到消息就发事件。
+收消息是 `slackctl listen --mentions-or-dms --include-bots=false`：slackctl 用同一份登录连 Slack 的实时连接（`rtm.connect`，桌面版用的那个），
+保活、断线重连都是它做的，插件只读它输出的 JSON 行、再按设置筛（群私聊、@ 我、只收谁）。
+listen 的输出不带附件、正文最多 2000 字，所以带附件或可能被截断的消息，插件会用同一份登录再取一次完整的。
+listen 因为登录失效退出时，插件重新从桌面版导入登录再拉起来。
 企业版（Enterprise Grid）实测：私聊是全组织共享的，连任意一个工作区都能收到；企业那个总地址不让连实时连接，所以插件只连一个普通工作区。
 
 ## 安全
