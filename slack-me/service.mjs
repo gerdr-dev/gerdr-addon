@@ -266,8 +266,10 @@ const allowList = () =>
     .filter(Boolean);
 
 // A listen line: { type: "message", subtype?, channel, ts, thread_ts?, user, bot_id?, text, from_self, is_mention, is_dm }.
-// It has no files and cuts text at 2000 characters, so a message that may have either is read again in full.
-const MAX_LISTEN_TEXT = 2000;
+// It has no files and cuts text at 2000 characters, so every message is read again in full. Nothing in the line says
+// whether files came with it: Slack's current uploads carry no file_share subtype, so "@a @b + a screenshot" arrived as
+// just "@a @b" while only image-only messages (empty text) got their files. Only DMs and @-mentions get here, so one
+// conversations.history call each is nothing next to the rate limit.
 
 async function onMessage(ev) {
   // listen already drops edits, deletions, joins…; files, thread broadcasts and /me are someone saying something
@@ -286,10 +288,8 @@ async function onMessage(ev) {
   } else if (settings.mentions && ev.is_mention) kind = "mention";
   else return;
 
-  if (ev.subtype === "file_share" || !ev.text || [...ev.text].length >= MAX_LISTEN_TEXT) {
-    const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
-    if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
-  }
+  const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
+  if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
   const text = ev.text ?? "";
 
   // Replies go in the message's thread, except a DM's top level, which is a conversation already
