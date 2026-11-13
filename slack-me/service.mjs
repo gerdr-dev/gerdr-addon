@@ -296,6 +296,9 @@ async function onMessage(ev) {
   const threadTs = ev.thread_ts || (kind === "direct" ? undefined : ev.ts);
   const who = await nameOf(ev.user);
   const files = await download(ev);
+  // What was said just before, yours included (only others' messages become events): a reply like "新版没用" means
+  // nothing to whoever reads it without the question it answers
+  const context = await before(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch context failed", e.message), []));
   out({
     type: "event",
     event: {
@@ -307,11 +310,35 @@ async function onMessage(ev) {
       title: `${who}: ${text.split("\n")[0].slice(0, 80)}`,
       text: text + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: `${ws_.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}`,
-      data: { channel: ev.channel, channelType: ck, user: ev.user, userName: who, ts: ev.ts, threadTs, text, files, workspace: ws_.url },
+      data: { channel: ev.channel, channelType: ck, user: ev.user, userName: who, ts: ev.ts, threadTs, text, files, workspace: ws_.url, context },
       // An answer goes out as you: subscribers that reply should mean to
       reply: { kind: "slack-me.send", data: { channel: ev.channel, threadTs } },
     },
   });
+}
+
+// The conversation's last few messages before ts (its thread's, or the DM's), oldest first, as Gerdr's chat sources
+// hand them on (data.context, docs/dev/EVENTS.md in gerdr): { who, me, text, at }. Two days back at most: older
+// talk is another conversation.
+const CONTEXT = 8;
+async function before(channel, ts, threadTs) {
+  const oldest = String(Number(ts) - 2 * 86400);
+  const j =
+    threadTs && threadTs !== ts
+      ? await api("conversations.replies", { channel, ts: threadTs, latest: ts, inclusive: "false", limit: "50" })
+      : await api("conversations.history", { channel, latest: ts, oldest, inclusive: "false", limit: String(CONTEXT) });
+  const msgs = (j.messages ?? [])
+    .filter((m) => m.ts !== ts && Number(m.ts) < Number(ts) && Number(m.ts) >= Number(oldest) && (m.text || m.files?.length))
+    .sort((a, b) => Number(a.ts) - Number(b.ts))
+    .slice(-CONTEXT);
+  const out = [];
+  for (const m of msgs) {
+    const mine = m.user === me;
+    const name = m.bot_id && !m.user ? m.username || "bot" : await nameOf(m.user);
+    const text = (m.text ?? "").slice(0, 600) + (m.files?.length ? ` [附件：${m.files.map((f) => f.name).join("、")}]` : "");
+    out.push({ who: name, me: mine, text, at: Math.round(Number(m.ts) * 1000) });
+  }
+  return out;
 }
 
 // One message as Slack stores it: a thread reply only shows up under its thread, anything else in the history
