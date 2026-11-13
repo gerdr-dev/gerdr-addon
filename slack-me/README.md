@@ -29,6 +29,7 @@
 | `slack-me/mention` | 频道里有人 @ 你（设置里打开才有） | `频道/thread_ts` |
 
 你自己发的、bot 发的不算。`actor` 是发消息的人的 member ID，`data`：`{ channel, channelType, user, userName, ts, threadTs, text, files, workspace }`。
+事件的 `text` / `title` 和 `data.context` 里，`<@U…>` 换成了 `@人名`；`data.text` 是 Slack 的原文，ID 还在。
 
 故意没叫 `dm`：`dm` 在 Gerdr 里的意思是「我自己发给我的 bot 的私信」，[在聊天里审批](../remote-answer) 这类插件会往最近一条 `dm` 的对话里发审批、把回复当成你的答复。
 别人私聊你不是这种对话，混进去会把审批发给同事。

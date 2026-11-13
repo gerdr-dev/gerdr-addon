@@ -138,6 +138,13 @@ async function nameOf(user) {
   return n;
 }
 
+// Slack writes a mention as <@U123> (or <@U123|name>): whoever reads the event, a person or an agent, needs the name.
+async function readable(text) {
+  const ids = [...new Set([...(text ?? "").matchAll(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g)].map((m) => m[1]))];
+  const got = new Map(await Promise.all(ids.map(async (id) => [id, await nameOf(id)])));
+  return (text ?? "").replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => `@${got.get(id) ?? id}`);
+}
+
 // listen only flags D… DMs; a group DM it lets through (or a channel @-mention) is told apart here, asked once per channel.
 async function kindOf(channel) {
   if (channel.startsWith("D")) return "im";
@@ -290,7 +297,8 @@ async function onMessage(ev) {
 
   const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
   if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
-  const text = ev.text ?? "";
+  const raw = ev.text ?? "";
+  const text = await readable(raw);
 
   // Replies go in the message's thread, except a DM's top level, which is a conversation already
   const threadTs = ev.thread_ts || (kind === "direct" ? undefined : ev.ts);
@@ -310,7 +318,7 @@ async function onMessage(ev) {
       title: `${who}: ${text.split("\n")[0].slice(0, 80)}`,
       text: text + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: `${ws_.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}`,
-      data: { channel: ev.channel, channelType: ck, user: ev.user, userName: who, ts: ev.ts, threadTs, text, files, workspace: ws_.url, context },
+      data: { channel: ev.channel, channelType: ck, user: ev.user, userName: who, ts: ev.ts, threadTs, text: raw, files, workspace: ws_.url, context },
       // An answer goes out as you: subscribers that reply should mean to
       reply: { kind: "slack-me.send", data: { channel: ev.channel, threadTs } },
     },
@@ -335,7 +343,7 @@ async function before(channel, ts, threadTs) {
   for (const m of msgs) {
     const mine = m.user === me;
     const name = m.bot_id && !m.user ? m.username || "bot" : await nameOf(m.user);
-    const text = (m.text ?? "").slice(0, 600) + (m.files?.length ? ` [附件：${m.files.map((f) => f.name).join("、")}]` : "");
+    const text = (await readable(m.text)).slice(0, 600) + (m.files?.length ? ` [附件：${m.files.map((f) => f.name).join("、")}]` : "");
     out.push({ who: name, me: mine, text, at: Math.round(Number(m.ts) * 1000) });
   }
   return out;
