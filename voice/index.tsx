@@ -17,7 +17,8 @@ const T = (cn: string, en: string) => (zh.v ? cn : en);
 
 // ---------- a tiny store the buttons and the bar re-render from ----------
 
-type Item = { key: string; session: string; title: string; text: string; kind: "reply" | "waiting" };
+// announce: say whose reply it is first (auto read: replies of any conversation; not when you asked for this one)
+type Item = { key: string; session: string; title: string; text: string; kind: "reply" | "waiting"; announce?: boolean };
 type State = {
   auto: boolean; // auto read: each finished reply is read aloud (this device)
   recording: string | null; // the session being recorded for (the focused one when the press began)
@@ -930,7 +931,19 @@ export default defineAddon({
       markPlayed(item.key);
       setMedia(item);
       try {
-        const head = item.kind === "waiting" ? "" : T(`「${item.title}」：`, `${item.title}: `);
+        const head = item.kind === "reply" && item.announce ? T(`「${item.title}」：`, `${item.title}: `) : "";
+        let done = false;
+        if (item.kind === "reply" && g.runMessageAction) {
+          // Through the message's own speaker when the reply is on screen: the paragraph being read is marked and a
+          // tap on another jumps there, as when you tap it yourself. The name first, on its own
+          if (head) await read(head, c.signal);
+          if (!c.signal.aborted) done = await g.runMessageAction("read", item.session);
+          if (done || c.signal.aborted) return;
+          if (head) {
+            await read(forSpeech(item.text), c.signal);
+            return;
+          }
+        }
         await read(head + forSpeech(item.text), c.signal);
       } catch (e) {
         if ((e as any)?.name === "NotAllowedError") {
@@ -986,7 +999,7 @@ export default defineAddon({
       const r = await g.sessions.reply(sid);
       const text = (g.settings.get<string>("scope") === "all" ? r.text : r.final || r.text).trim();
       if (!text) return g.notify(T("这个对话还没有回复", "No reply in this conversation yet"));
-      play({ key: `${sid}:latest:${Date.now()}`, session: sid, title: titleOf(sid), text, kind: "reply" });
+      play({ key: `${sid}:latest:${Date.now()}`, session: sid, title: titleOf(sid), text, kind: "reply", announce: false });
     }
 
     // A car's steering-wheel buttons / a headset: next = the next reply, play = start, pause = stop
@@ -1022,7 +1035,7 @@ export default defineAddon({
       try {
         const r = await g.sessions.reply(t.sessionId);
         const text = g.settings.get<string>("scope") === "all" ? r.text : r.final || r.text;
-        if (text) enqueue({ key, session: t.sessionId, title: titleOf(t.sessionId), text, kind: "reply" });
+        if (text) enqueue({ key, session: t.sessionId, title: titleOf(t.sessionId), text, kind: "reply", announce: true });
       } catch (e) {
         fail(e);
       }
@@ -1195,7 +1208,7 @@ export default defineAddon({
           className={g.ui.cn(
             "absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[14px]",
             // While talking it's invisible (the words fill the field under it), but stays to keep the finger's press
-            talking ? "opacity-0" : "border border-dashed border-border/80 text-muted-foreground/80",
+            talking ? "opacity-0" : "text-muted-foreground/80",
           )}
           onPointerDown={(e: any) => {
             if (e.button !== 0 || st.busy) return;
