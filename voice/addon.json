@@ -1,0 +1,429 @@
+{
+  "name": "语音",
+  "version": "0.2.0",
+  "description": "按住 🎤 说话（Azure 或豆包识别，模型结合对话纠错），文字进输入框；点消息旁的喇叭或 🎧 听回复，长按 🎧 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
+  "icon": "icon.svg",
+  "screenshots": [],
+  "settings": [
+    {
+      "key": "enableInput",
+      "title": "语音输入",
+      "type": "boolean",
+      "default": true,
+      "description": "📎 右边的 🎤：按住说话，松手放进输入框，上滑取消，右滑发送。"
+    },
+    {
+      "key": "asr",
+      "title": "识别用",
+      "type": "select",
+      "default": "azure",
+      "required": true,
+      "options": [
+        {
+          "value": "azure",
+          "label": "微软 Azure"
+        },
+        {
+          "value": "doubao",
+          "label": "豆包（火山引擎）"
+        }
+      ],
+      "description": "豆包在国内、便宜（约 1 元/小时），还会参考对话内容识别；Azure 每月 5 小时免费。"
+    },
+    {
+      "key": "doubaoKey",
+      "title": "豆包 Key",
+      "type": "secret",
+      "default": "",
+      "description": "火山引擎控制台 → 豆包语音 → API Key（新版控制台）；老版控制台填 Access Token，并在下面填 App ID。"
+    },
+    {
+      "key": "doubaoAppId",
+      "title": "豆包 App ID",
+      "type": "string",
+      "default": "",
+      "description": "只有老版控制台需要：应用的 App ID。新版控制台留空。"
+    },
+    {
+      "key": "azureKey",
+      "title": "Azure Key",
+      "type": "secret",
+      "default": "",
+      "description": "Azure 门户里语音（Speech）资源的「密钥和终结点」页，KEY 1 或 KEY 2。识别选 Azure、朗读选 Azure，或者没设纠错模型时整段重识别，都用它。"
+    },
+    {
+      "key": "azureRegion",
+      "title": "Azure 区域",
+      "type": "string",
+      "default": "eastasia",
+      "description": "同一页的「位置/区域」，如 eastasia、southeastasia、eastus。"
+    },
+    {
+      "key": "locale",
+      "title": "识别语言",
+      "type": "select",
+      "default": "zh-CN",
+      "required": true,
+      "options": [
+        {
+          "value": "zh-CN",
+          "label": "中文（夹英文单词也行）"
+        },
+        {
+          "value": "en-US",
+          "label": "英文"
+        },
+        {
+          "value": "auto",
+          "label": "自动判断"
+        }
+      ]
+    },
+    {
+      "key": "enhanced",
+      "title": "大模型识别",
+      "type": "boolean",
+      "default": true,
+      "description": "用 Azure 的 LLM Speech 识别，中英混说更准。你的区域不支持时会自动退回普通识别。"
+    },
+    {
+      "key": "fixModel",
+      "title": "纠错模型",
+      "type": "string",
+      "default": "",
+      "description": "识别完用这个模型结合对话上下文改同音字和术语（填 Gerdr 设置 → 模型里配好的，如 subhub/gpt-6.1-terra）。空 = 不纠错，松手后用 Azure 大模型把整段重新识别一遍。"
+    },
+    {
+      "key": "words",
+      "title": "我的词表",
+      "type": "text",
+      "default": "Claude\nCodex\nagent\nGerdr\nMCP\nskill\nprompt\nsession\nadd-on\ncommit\nPR",
+      "description": "一行一个，常说又容易认错的词：产品名、人名、术语。每次识别连同这段对话里出现过的英文词一起当提示。"
+    },
+    {
+      "key": "sendMode",
+      "title": "识别完",
+      "type": "select",
+      "default": "insert",
+      "required": true,
+      "options": [
+        {
+          "value": "insert",
+          "label": "放进输入框，我看一眼再发"
+        },
+        {
+          "value": "send",
+          "label": "直接发"
+        }
+      ],
+      "description": "右滑松手总是直接发。"
+    },
+    {
+      "key": "enableOutput",
+      "title": "朗读",
+      "type": "boolean",
+      "default": true,
+      "description": "消息旁的喇叭，和输入框旁的 🎧：点一下念最新回复，长按开关自动朗读。"
+    },
+    {
+      "key": "ttsProvider",
+      "title": "朗读用",
+      "type": "select",
+      "default": "mimo",
+      "required": true,
+      "options": [
+        {
+          "value": "mimo",
+          "label": "小米 MiMo"
+        },
+        {
+          "value": "azure",
+          "label": "Azure 语音"
+        }
+      ],
+      "description": "换了服务商，下面跟着换成它的设置。"
+    },
+    {
+      "key": "mimoKey",
+      "title": "MiMo API Key",
+      "type": "secret",
+      "default": "",
+      "description": "在 platform.xiaomimimo.com 申请。"
+    },
+    {
+      "key": "mimoVoice",
+      "title": "音色",
+      "type": "select",
+      "default": "茉莉",
+      "options": [
+        {
+          "value": "茉莉",
+          "label": "茉莉（女声，知性）"
+        },
+        {
+          "value": "冰糖",
+          "label": "冰糖"
+        },
+        {
+          "value": "苏打",
+          "label": "苏打"
+        },
+        {
+          "value": "白桦",
+          "label": "白桦"
+        },
+        {
+          "value": "mimo_default",
+          "label": "默认（mimo_default）"
+        },
+        {
+          "value": "default_zh",
+          "label": "中文（default_zh）"
+        },
+        {
+          "value": "default_en",
+          "label": "英文（default_en）"
+        },
+        {
+          "value": "Mia",
+          "label": "Mia"
+        },
+        {
+          "value": "Chloe",
+          "label": "Chloe"
+        },
+        {
+          "value": "Milo",
+          "label": "Milo"
+        },
+        {
+          "value": "Dean",
+          "label": "Dean"
+        }
+      ]
+    },
+    {
+      "key": "mimoStyle",
+      "title": "朗读风格",
+      "type": "string",
+      "default": "自然、亲切、利落，不要播音腔，语速中等偏快，句与句之间停顿短一点",
+      "description": "一句话说想要的语气，随文字一起发给模型。清空就是模型默认的读法。"
+    },
+    {
+      "key": "mimoModel",
+      "title": "模型",
+      "type": "select",
+      "default": "mimo-v2.5-tts",
+      "options": [
+        {
+          "value": "mimo-v2.5-tts",
+          "label": "mimo-v2.5-tts"
+        },
+        {
+          "value": "mimo-v2-tts",
+          "label": "mimo-v2-tts"
+        }
+      ]
+    },
+    {
+      "key": "mimoBaseURL",
+      "title": "接口地址",
+      "type": "string",
+      "default": "https://api.xiaomimimo.com/v1",
+      "description": "走代理 / 中转时改这里。"
+    },
+    {
+      "key": "azureVoice",
+      "title": "音色",
+      "type": "string",
+      "default": "zh-CN-XiaoxiaoMultilingualNeural",
+      "description": "语音名，如 zh-CN-XiaoxiaoMultilingualNeural、zh-CN-YunxiNeural、en-US-AvaMultilingualNeural。完整列表见 Azure 的语音库（Voice Gallery）。"
+    },
+    {
+      "key": "azureRate",
+      "title": "语速",
+      "type": "number",
+      "default": 10,
+      "min": -50,
+      "max": 100,
+      "unit": "%",
+      "description": "相对正常语速快多少，0 是正常，负数变慢。"
+    },
+    {
+      "key": "scope",
+      "title": "读哪些",
+      "type": "select",
+      "default": "final",
+      "required": true,
+      "options": [
+        {
+          "value": "final",
+          "label": "只读最后一段"
+        },
+        {
+          "value": "all",
+          "label": "整条回复"
+        }
+      ],
+      "description": "agent 的回复：只读最后一段（干完活的总结），跳过过程中说的话；或者全读。只读最后一段时，读着读着点前面的某段，也会从那段接着读下去。你发的消息总是全读。"
+    },
+    {
+      "key": "playMode",
+      "title": "免提播报",
+      "type": "select",
+      "default": "auto",
+      "required": true,
+      "options": [
+        {
+          "value": "auto",
+          "label": "做完一个念一个"
+        },
+        {
+          "value": "manual",
+          "label": "叮一声，我点了再念"
+        }
+      ],
+      "description": "长按输入框旁的 🎧 打开（只对这台设备）。几个 agent 一起做完时排队，一条接一条；每一轮只念一次。"
+    },
+    {
+      "key": "includeAuto",
+      "title": "也念 agent 自己醒来的那轮",
+      "type": "boolean",
+      "default": false,
+      "description": "后台任务跑完、agent 自己接着说的那轮。默认不念：这种轮次多又碎。"
+    },
+    {
+      "key": "preview",
+      "title": "试听",
+      "type": "action",
+      "label": "播放",
+      "description": "用上面的朗读设置念一句，听听对不对。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Voice",
+      "description": "Hold 🎤 to talk (Azure or Doubao, fixed up by a model that reads the conversation); the text goes to the composer. Tap the speaker on a message or 🎧 to hear a reply; hold 🎧 for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
+      "settings": {
+        "azureKey": {
+          "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to transcribe, and to read aloud when Azure is picked."
+        },
+        "azureRegion": {
+          "title": "Azure region",
+          "description": "The Location/Region on the same page, e.g. eastasia, eastus."
+        },
+        "locale": {
+          "title": "Language",
+          "options": {
+            "zh-CN": "Chinese (English words mixed in are fine)",
+            "en-US": "English",
+            "auto": "Detect"
+          }
+        },
+        "enhanced": {
+          "title": "LLM transcription",
+          "description": "Azure's LLM Speech: better with mixed languages. Falls back to the standard model where your region lacks it."
+        },
+        "words": {
+          "title": "My words",
+          "description": "One per line: words you say often that get misheard (product names, people, terms). Sent as hints with the English words from this conversation."
+        },
+        "sendMode": {
+          "title": "After transcribing",
+          "options": {
+            "insert": "Put it in the composer, I send it",
+            "send": "Send it"
+          },
+          "description": "Swiping right before letting go always sends."
+        },
+        "playMode": {
+          "title": "Hands-free",
+          "options": {
+            "auto": "Read each as it finishes",
+            "manual": "Chime, read when I tap"
+          },
+          "description": "Turn it on by holding 🎧 by the composer (this device only). Agents finishing together queue up; each turn is read once."
+        },
+        "includeAuto": {
+          "title": "Also read turns the agent started itself",
+          "description": "After a background task, when the agent reports on its own. Off by default: many and small."
+        },
+        "ttsProvider": {
+          "title": "Read with",
+          "options": {
+            "mimo": "Xiaomi MiMo",
+            "azure": "Azure Speech"
+          },
+          "description": "Switch it and the settings below switch to its own."
+        },
+        "azureVoice": {
+          "title": "Voice",
+          "description": "A voice name, e.g. en-US-AvaMultilingualNeural, zh-CN-XiaoxiaoMultilingualNeural. Full list: Azure's Voice Gallery."
+        },
+        "azureRate": {
+          "title": "Speed",
+          "description": "How much faster than normal; 0 is normal, negative is slower."
+        },
+        "mimoVoice": {
+          "title": "Voice"
+        },
+        "preview": {
+          "title": "Preview",
+          "label": "Play",
+          "description": "Reads a sentence with the reading settings above."
+        },
+        "fixModel": {
+          "title": "Fix-up model",
+          "description": "A model configured in Gerdr (Settings → Models, e.g. subhub/gpt-6.1-terra) that fixes misheard words using the conversation. Empty: no fix-up; the whole recording is transcribed again by Azure's LLM model instead."
+        },
+        "asr": {
+          "title": "Recognize with",
+          "options": {
+            "azure": "Microsoft Azure",
+            "doubao": "Doubao (Volcengine)"
+          },
+          "description": "Doubao: in China, cheap (~1 CNY/hour), and reads the conversation as context. Azure: 5 hours free a month."
+        },
+        "doubaoKey": {
+          "title": "Doubao key",
+          "description": "Volcengine console → Doubao Speech → API Key (new console); the old console's Access Token, with the App ID below."
+        },
+        "doubaoAppId": {
+          "title": "Doubao App ID",
+          "description": "Only for the old console: the app's App ID. Empty for the new console."
+        },
+        "enableInput": {
+          "title": "Voice input",
+          "description": "The 🎤 right after 📎: hold to talk, let go to put it in the composer, slide up to cancel, right to send."
+        },
+        "enableOutput": {
+          "title": "Read aloud",
+          "description": "The speaker beside messages, and 🎧 by the composer: tap to read the latest reply, hold to turn auto read on / off."
+        },
+        "mimoKey": {
+          "title": "MiMo API Key",
+          "description": "From platform.xiaomimimo.com."
+        },
+        "mimoStyle": {
+          "title": "Style",
+          "description": "The tone you want, in a sentence, sent to the model with the text. Empty: the model's own reading."
+        },
+        "mimoModel": {
+          "title": "Model"
+        },
+        "mimoBaseURL": {
+          "title": "API address",
+          "description": "Change it to go through a proxy."
+        },
+        "scope": {
+          "title": "What to read",
+          "options": {
+            "final": "The last part only",
+            "all": "The whole reply"
+          },
+          "description": "For an agent's reply: only its last part (the summary once the work is done), skipping what it said along the way; or all of it. Reading the last part, a tap on an earlier paragraph still jumps there and reads on. Your own messages are always read whole."
+        }
+      }
+    }
+  }
+}
