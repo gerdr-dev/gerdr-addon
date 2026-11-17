@@ -1,7 +1,7 @@
 {
   "name": "语音",
-  "version": "0.2.1",
-  "description": "按住 🎤 说话（Azure 或豆包识别，模型结合对话纠错），文字进输入框；点消息旁的喇叭或 🎧 听回复，长按 🎧 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
+  "version": "0.3.0",
+  "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点消息旁的喇叭或 🎧 听回复，长按 🎧 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
   "settings": [
@@ -11,24 +11,6 @@
       "type": "boolean",
       "default": true,
       "description": "📎 右边的 🎤：按住说话，松手放进输入框，上滑取消，右滑发送。"
-    },
-    {
-      "key": "asr",
-      "title": "识别用",
-      "type": "select",
-      "default": "azure",
-      "required": true,
-      "options": [
-        {
-          "value": "azure",
-          "label": "微软 Azure"
-        },
-        {
-          "value": "doubao",
-          "label": "豆包（火山引擎）"
-        }
-      ],
-      "description": "豆包在国内、便宜（约 1 元/小时），还会参考对话内容识别；Azure 每月 5 小时免费。"
     },
     {
       "key": "doubaoKey",
@@ -49,7 +31,7 @@
       "title": "Azure Key",
       "type": "secret",
       "default": "",
-      "description": "Azure 门户里语音（Speech）资源的「密钥和终结点」页，KEY 1 或 KEY 2。识别选 Azure、朗读选 Azure，或者没设纠错模型时整段重识别，都用它。"
+      "description": "Azure 门户里语音（Speech）资源的「密钥和终结点」页，KEY 1 或 KEY 2。朗读选 Azure 时用。"
     },
     {
       "key": "azureRegion",
@@ -59,39 +41,11 @@
       "description": "同一页的「位置/区域」，如 eastasia、southeastasia、eastus。"
     },
     {
-      "key": "locale",
-      "title": "识别语言",
-      "type": "select",
-      "default": "zh-CN",
-      "required": true,
-      "options": [
-        {
-          "value": "zh-CN",
-          "label": "中文（夹英文单词也行）"
-        },
-        {
-          "value": "en-US",
-          "label": "英文"
-        },
-        {
-          "value": "auto",
-          "label": "自动判断"
-        }
-      ]
-    },
-    {
-      "key": "enhanced",
-      "title": "大模型识别",
-      "type": "boolean",
-      "default": true,
-      "description": "用 Azure 的 LLM Speech 识别，中英混说更准。你的区域不支持时会自动退回普通识别。"
-    },
-    {
       "key": "fixModel",
       "title": "纠错模型",
       "type": "string",
       "default": "",
-      "description": "识别完用这个模型结合对话上下文改同音字和术语（填 Gerdr 设置 → 模型里配好的，如 subhub/gpt-6.1-terra）。空 = 不纠错，松手后用 Azure 大模型把整段重新识别一遍。"
+      "description": "可选，一般不用：每说完一句就交给这个模型，结合对话改同音字和术语，改好的直接换掉那一句（填 Gerdr 设置 → 模型里配好的，如 subhub/gpt-6.1-terra）。开着时松手后要等最后一句纠完。"
     },
     {
       "key": "words",
@@ -129,9 +83,13 @@
       "key": "ttsProvider",
       "title": "朗读用",
       "type": "select",
-      "default": "mimo",
+      "default": "doubao",
       "required": true,
       "options": [
+        {
+          "value": "doubao",
+          "label": "豆包（火山引擎）"
+        },
         {
           "value": "mimo",
           "label": "小米 MiMo"
@@ -142,6 +100,73 @@
         }
       ],
       "description": "换了服务商，下面跟着换成它的设置。"
+    },
+    {
+      "key": "doubaoVoice",
+      "title": "音色",
+      "type": "select",
+      "default": "zh_female_xiaohe_uranus_bigtts",
+      "options": [
+        {
+          "value": "zh_female_xiaohe_uranus_bigtts",
+          "label": "小何（女声，通用）"
+        },
+        {
+          "value": "zh_female_vv_uranus_bigtts",
+          "label": "Vivi（女声）"
+        },
+        {
+          "value": "zh_female_qingxinnvsheng_uranus_bigtts",
+          "label": "清新女声"
+        },
+        {
+          "value": "zh_female_wenrouxiaoya_uranus_bigtts",
+          "label": "温柔小雅（女声）"
+        },
+        {
+          "value": "zh_female_shuangkuaisisi_uranus_bigtts",
+          "label": "爽快思思（女声）"
+        },
+        {
+          "value": "zh_female_cancan_uranus_bigtts",
+          "label": "灿灿（女声）"
+        },
+        {
+          "value": "zh_male_m191_uranus_bigtts",
+          "label": "男声 m191"
+        },
+        {
+          "value": "zh_male_taocheng_uranus_bigtts",
+          "label": "男声 taocheng"
+        },
+        {
+          "value": "zh_male_ruyayichen_uranus_bigtts",
+          "label": "儒雅逸辰（男声）"
+        },
+        {
+          "value": "zh_male_yangguangqingnian_uranus_bigtts",
+          "label": "阳光青年（男声）"
+        },
+        {
+          "value": "zh_male_jieshuoxiaoming_uranus_bigtts",
+          "label": "解说小明（男声）"
+        },
+        {
+          "value": "zh_male_dayi_uranus_bigtts",
+          "label": "大壹（男声）"
+        }
+      ],
+      "description": "豆包语音合成 2.0 的音色，用「试听」听一下。"
+    },
+    {
+      "key": "doubaoRate",
+      "title": "语速",
+      "type": "number",
+      "default": 0,
+      "min": -50,
+      "max": 100,
+      "unit": "%",
+      "description": "相对正常语速快多少，0 是正常，负数变慢。"
     },
     {
       "key": "mimoKey",
@@ -303,26 +328,14 @@
   "i18n": {
     "en": {
       "name": "Voice",
-      "description": "Hold 🎤 to talk (Azure or Doubao, fixed up by a model that reads the conversation); the text goes to the composer. Tap the speaker on a message or 🎧 to hear a reply; hold 🎧 for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
+      "description": "Hold 🎤 to talk (Doubao recognition, words go into the composer as you speak). Tap the speaker on a message or 🎧 to hear a reply; hold 🎧 for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
       "settings": {
         "azureKey": {
-          "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to transcribe, and to read aloud when Azure is picked."
+          "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to read aloud when Azure is picked."
         },
         "azureRegion": {
           "title": "Azure region",
           "description": "The Location/Region on the same page, e.g. eastasia, eastus."
-        },
-        "locale": {
-          "title": "Language",
-          "options": {
-            "zh-CN": "Chinese (English words mixed in are fine)",
-            "en-US": "English",
-            "auto": "Detect"
-          }
-        },
-        "enhanced": {
-          "title": "LLM transcription",
-          "description": "Azure's LLM Speech: better with mixed languages. Falls back to the standard model where your region lacks it."
         },
         "words": {
           "title": "My words",
@@ -351,6 +364,7 @@
         "ttsProvider": {
           "title": "Read with",
           "options": {
+            "doubao": "Doubao (Volcengine)",
             "mimo": "Xiaomi MiMo",
             "azure": "Azure Speech"
           },
@@ -374,15 +388,7 @@
         },
         "fixModel": {
           "title": "Fix-up model",
-          "description": "A model configured in Gerdr (Settings → Models, e.g. subhub/gpt-6.1-terra) that fixes misheard words using the conversation. Empty: no fix-up; the whole recording is transcribed again by Azure's LLM model instead."
-        },
-        "asr": {
-          "title": "Recognize with",
-          "options": {
-            "azure": "Microsoft Azure",
-            "doubao": "Doubao (Volcengine)"
-          },
-          "description": "Doubao: in China, cheap (~1 CNY/hour), and reads the conversation as context. Azure: 5 hours free a month."
+          "description": "Optional, rarely needed: each finished sentence goes to this model (configured in Gerdr, Settings → Models), which reads the conversation and fixes misheard words in place. With it on, letting go waits for the last sentence's fix."
         },
         "doubaoKey": {
           "title": "Doubao key",
@@ -422,6 +428,14 @@
             "all": "The whole reply"
           },
           "description": "For an agent's reply: only its last part (the summary once the work is done), skipping what it said along the way; or all of it. Reading the last part, a tap on an earlier paragraph still jumps there and reads on. Your own messages are always read whole."
+        },
+        "doubaoVoice": {
+          "title": "Voice",
+          "description": "A Doubao TTS 2.0 voice; try it with Preview."
+        },
+        "doubaoRate": {
+          "title": "Speed",
+          "description": "How much faster than normal: 0 is normal, negative is slower."
         }
       }
     }

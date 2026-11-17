@@ -2,10 +2,11 @@
 // Voice: talk to an agent instead of typing, and hear what it did instead of reading. Two halves, each with its
 // own switch in settings (enableInput / enableOutput), so someone who only listens never sees a mic.
 //
-// Input: hold the mic (pinned after the attach button) to talk. The mic's PCM goes to a streaming recognizer
-// (Azure or Doubao, through g.socket) so the words show in a bubble as they're said; on release the text is fixed up
-// by a configured model that reads the conversation (g.llm), or, with Azure and no such model, the whole recording
-// is transcribed again. The text lands in the composer, to read and fix before sending (swipe right: send at once).
+// Input: hold the mic (pinned after the attach button) to talk. The mic's PCM goes to Doubao's streaming
+// recognizer (through g.socket) and the words go into the composer as they're said; each sentence, once settled, can
+// be fixed up by a configured model that reads the conversation (g.llm) and replaced in place, so what's on screen is
+// what gets sent (swipe right: send). Azure recognition was here too and was dropped: its streaming text was rough
+// enough to need a second pass on release, which replaced what you saw — Doubao re-checks each sentence itself.
 //
 // Output: the speaker beside each message (g.messageAction) reads it, paragraph by paragraph, marking and jumping;
 // 🎧 by the composer reads the conversation's latest reply now (tap) or turns auto read on (hold, per device): each finished
@@ -23,10 +24,10 @@ type State = {
   auto: boolean; // auto read: each finished reply is read aloud (this device)
   recording: string | null; // the session being recorded for (the focused one when the press began)
   since: number; // when recording started (ms)
-  busy: string | null; // released: the recording is being transcribed whole
+  busy: string | null; // released: waiting for the last sentence (and its fix-up)
   live: { done: string; hyp: string }; // what streaming recognition heard so far: settled phrases, the one in progress
-  // where the finger slid: up = releasing drops the recording, right = releasing sends it (after the whole-recording
-  // pass: there's no looking it over, so it waits for the more accurate text)
+  // where the finger slid: up = releasing drops the recording, right = releasing sends it (what's in the composer,
+  // once the last sentence is fixed up)
   swipe: "" | "cancel" | "send";
   // where the press is: "spot" (the middle of the field, under the finger: the field makes room) or the bar's mic
   from: "spot" | "mic";
@@ -39,8 +40,10 @@ type State = {
   last: Item | null;
   // auto read came back on with the page (a reload) and no tap has unlocked sound yet: the WebView would refuse it
   needTap: boolean;
+  // conversations whose 🎧 was tapped while the agent was still answering: their reply is read when the turn ends
+  armed: string[];
 };
-let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", from: "mic", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false };
+let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", from: "mic", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
 const subs = new Set<() => void>();
 const put = (p: Partial<State>) => {
   st = { ...st, ...p };
@@ -186,29 +189,6 @@ function chime() {
   }
 }
 
-/** multipart/form-data by hand: g.fetch sends bytes, not FormData. */
-async function multipart(parts: { name: string; value: string | Blob; filename?: string }[]) {
-  const boundary = `----gerdr${Math.random().toString(36).slice(2)}`;
-  const enc = new TextEncoder();
-  const chunks: Uint8Array[] = [];
-  for (const p of parts) {
-    const head =
-      `--${boundary}\r\nContent-Disposition: form-data; name="${p.name}"${p.filename ? `; filename="${p.filename}"` : ""}\r\n` +
-      (typeof p.value === "string" ? "\r\n" : `Content-Type: ${p.value.type || "application/octet-stream"}\r\n\r\n`);
-    chunks.push(enc.encode(head));
-    chunks.push(typeof p.value === "string" ? enc.encode(p.value) : new Uint8Array(await p.value.arrayBuffer()));
-    chunks.push(enc.encode("\r\n"));
-  }
-  chunks.push(enc.encode(`--${boundary}--\r\n`));
-  const body = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
-  let at = 0;
-  for (const c of chunks) {
-    body.set(c, at);
-    at += c.length;
-  }
-  return { body, type: `multipart/form-data; boundary=${boundary}` };
-}
-
 export default defineAddon({
   setup(g) {
     zh.v = g.locale() === "zh";
@@ -248,49 +228,6 @@ export default defineAddon({
 
     // ---------- transcription ----------
 
-    const azureKey = () => {
-      const key = g.settings.get<string>("azureKey")?.trim();
-      const region = g.settings.get<string>("azureRegion")?.trim();
-      if (!key || !region) throw new Error(T(`先在 ${where} 里填 Azure 的 Key 和区域`, `Set the Azure key and region in ${where}`));
-      return { key, region };
-    };
-
-    /** Whether this region turned LLM Speech down once: then the standard model, without asking again. */
-    let noEnhanced = false;
-
-    async function transcribe(audio: Blob, hints: string[]): Promise<string> {
-      const { key, region } = azureKey();
-      const locale = g.settings.get<string>("locale") || "zh-CN";
-      const words = (g.settings.get<string>("words") ?? "")
-        .split("\n")
-        .map((w) => w.trim())
-        .filter(Boolean);
-      const phrases = [...new Set([...words, ...hints])].slice(0, 300);
-      const enhanced = g.settings.get<boolean>("enhanced") !== false && !noEnhanced;
-      const def: Record<string, unknown> = { locales: locale === "auto" ? [] : [locale], profanityFilterMode: "None" };
-      if (phrases.length) def.phraseList = { phrases };
-      if (enhanced) def.enhancedMode = { enabled: true, task: "transcribe" };
-      const ext = audio.type.includes("ogg") ? "ogg" : audio.type.includes("mp4") ? "m4a" : "webm";
-      const mp = await multipart([
-        { name: "audio", value: audio, filename: `voice.${ext}` },
-        { name: "definition", value: JSON.stringify(def) },
-      ]);
-      const r = await g.fetch(
-        `https://${region}.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2025-10-15`,
-        { method: "POST", headers: { "Ocp-Apim-Subscription-Key": key, "Content-Type": mp.type }, body: mp.body },
-      );
-      if (!r.ok) {
-        if (enhanced && /enhanced mode/i.test(r.text)) {
-          noEnhanced = true;
-          note(T("这个 Azure 区域不支持大模型识别，改用普通识别", "This Azure region has no LLM Speech; using the standard model"));
-          return transcribe(audio, hints);
-        }
-        throw new Error(`Azure ${r.status}: ${r.text.slice(0, 200)}`);
-      }
-      const data = r.json();
-      return (data?.combinedPhrases ?? []).map((p: any) => p.text).join(" ").trim();
-    }
-
     /** The words of this conversation, as hints. */
     async function hintsFor(sid: string, typed: string): Promise<string[]> {
       const s = g.state().sessions.find((x) => x.id === sid);
@@ -304,11 +241,8 @@ export default defineAddon({
     }
 
     // ---------- recording ----------
-    // Hold the mic to talk, let go to finish (slide up to cancel, right to send). While held, the mic's PCM goes two ways: to Azure's
-    // streaming recognition through g.socket, so the words show in a bubble as they're said, and into a buffer. On
-    // release the whole buffer goes to fast transcription (the LLM model, with the hints), which gets technical words
-    // right where streaming doesn't (measured: streaming made "Gerdr 的 add-on" into "这儿的 add on"); its text is what
-    // lands in the composer. If that fails, the streamed text does.
+    // Hold the mic to talk, let go to finish (slide up to cancel, right to send). While held, the mic's PCM goes to
+    // streaming recognition through g.socket, so the words go into the composer as they're said.
 
     /** A streaming recognizer: takes the PCM as it's recorded, reports what it heard through setLive. */
     type Live = { push(pcm: Int16Array): void; end(): void; close(): void };
@@ -316,7 +250,7 @@ export default defineAddon({
       stream: MediaStream;
       ctx: AudioContext;
       node: ScriptProcessorNode;
-      pcm: Int16Array[]; // everything recorded (16 kHz), for the whole-recording pass
+      samples: number; // how much was recorded (16 kHz)
       live: Live | null; // null until the recognizer's socket is set up
       buf: Int16Array[]; // recorded before that, handed over then
       ending: boolean; // released before the recognizer was ready: end it once it is
@@ -330,35 +264,57 @@ export default defineAddon({
     // What the composer held when the press began: the words go in live after it, as said (like a keyboard's voice
     // input), and are replaced by the fixed-up text on release; cancelling puts it back. null: no press going on
     let liveBase: string | null = null;
+    // What we last wrote into the composer. The person may send (or edit) the live text before the fix-up comes
+    // back: then the composer no longer holds it, and nothing more is written — late words or the fixed-up copy
+    // would put back a message already sent
+    let lastShown: string | null = null;
     const joinText = (base: string, t: string) => (base && t ? base + (/\s$/.test(base) ? "" : " ") + t : base + t);
-    const showLive = (t: string) => target && liveBase !== null && target.setText(joinText(liveBase, t));
+    const touched = () => !!target && lastShown !== null && target.text !== lastShown;
+    const showLive = (t: string) => {
+      if (!target || liveBase === null) return;
+      if (touched()) return void (liveBase = lastShown = null);
+      lastShown = joinText(liveBase, t);
+      target.setText(lastShown);
+    };
     const dropLive = () => {
-      if (target && liveBase !== null) target.setText(liveBase);
-      liveBase = null;
+      if (target && liveBase !== null && !touched()) target.setText(liveBase);
+      liveBase = lastShown = null;
     };
 
-    const hexId = () => crypto.randomUUID().replace(/-/g, "").toUpperCase();
-    const stamp = () => new Date().toISOString();
+    // Each sentence the recognizer settles is fixed up right away by the fix-up model (fixModel, optional), while you
+    // go on talking, and the fixed copy replaces it in the composer: what you see while holding is what gets sent, not
+    // a draft that changes after you let go (that made "swipe right: send" a blind send). Only the sentence still
+    // being said is raw. The model reads the conversation and fixes homophones a recognizer can't tell apart
+    // ("对不起" → "对不齐" while talking layout).
+    type Seg = { raw: string; fixed: string | null; failed: boolean; job: Promise<void> };
+    let segs: Seg[] = [];
+    let segSession = "";
+    const shown = (hyp: string) => segs.map((x) => x.fixed ?? x.raw).join("") + hyp;
+    function addSeg(raw: string) {
+      const model = g.settings.get<string>("fixModel")?.trim();
+      const seg: Seg = { raw, fixed: null, failed: false, job: Promise.resolve() };
+      const before = (liveBase ?? "") + shown("");
+      segs.push(seg);
+      if (!raw.trim() || !model) return;
+      seg.job = fixText(raw, model, segSession, before)
+        .then((t) => {
+          if (!t || !segs.includes(seg)) return;
+          seg.fixed = t;
+          showLive(shown(st.live.hyp));
+        })
+        .catch((e) => {
+          seg.failed = true;
+          console.warn("voice: fix-up failed", e);
+        });
+    }
     /** What a recognizer heard so far: settled sentences, and the one still changing. */
     const setLive = (r: Rec, done: string, hyp: string) => {
       if (rec !== r && !st.busy) return;
+      let have = segs.map((x) => x.raw).join("");
+      if (!done.startsWith(have)) [segs, have] = [[], ""]; // the recognizer took settled words back
+      if (done.length > have.length) addSeg(done.slice(have.length));
       put({ live: { done, hyp } });
-      showLive(done + hyp); // straight into the composer, as said
-    };
-    const asr = () => (g.settings.get<string>("asr") === "doubao" ? "doubao" : "azure");
-
-    /** Azure's speech WebSocket protocol: text messages are headers + JSON, audio messages a 2-byte header length,
-     * headers, then bytes (the first carrying a WAV header, an empty one ending the audio). */
-    const textMsg = (rid: string, path: string, body: unknown) =>
-      `Path: ${path}\r\nX-RequestId: ${rid}\r\nX-Timestamp: ${stamp()}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(body)}`;
-    const audioMsg = (rid: string, bytes: Uint8Array) => {
-      const head = new TextEncoder().encode(`Path: audio\r\nX-RequestId: ${rid}\r\nX-Timestamp: ${stamp()}\r\nContent-Type: audio/x-wav\r\n`);
-      const out = new Uint8Array(2 + head.length + bytes.length);
-      out[0] = head.length >> 8;
-      out[1] = head.length & 255;
-      out.set(head, 2);
-      out.set(bytes, 2 + head.length);
-      return out;
+      showLive(shown(hyp)); // straight into the composer, as said
     };
 
     /** A socket that queues what's sent before it opens. */
@@ -372,55 +328,11 @@ export default defineAddon({
       return (m: string | Uint8Array) => (sock.readyState === WebSocket.OPEN ? sock.send(m) : q.push(m));
     }
 
-    async function azureLive(r: Rec, hints: string[]): Promise<Live> {
-      const { key, region } = azureKey();
-      const locale = g.settings.get<string>("locale") || "zh-CN";
-      const lang = locale === "auto" ? "zh-CN" : locale;
-      const sock = await g.socket(
-        `wss://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${lang}&format=simple`,
-        { headers: { "Ocp-Apim-Subscription-Key": key, "X-ConnectionId": hexId() } },
-      );
-      sock.binaryType = "arraybuffer";
-      const rid = hexId();
-      const send = queued(sock, () => {
-        sock.send(
-          textMsg(rid, "speech.config", {
-            context: { system: { version: "1.0.00000" }, os: { platform: "Browser", name: "gerdr", version: "1" }, device: { manufacturer: "gerdr", model: "gerdr", version: "1" } },
-          }),
-        );
-        if (hints.length) sock.send(textMsg(rid, "speech.context", { dgi: { Groups: [{ Type: "Generic", Items: hints.map((t) => ({ Text: t })) }] } }));
-      });
-      send(audioMsg(rid, wav([], false)));
-      let done = "";
-      sock.onmessage = (e) => {
-        if (typeof e.data !== "string") return;
-        const cut = e.data.indexOf("\r\n\r\n");
-        const path = /Path:\s*([^\r\n]+)/i.exec(e.data.slice(0, cut))?.[1]?.trim().toLowerCase();
-        let body: any = {};
-        try {
-          body = JSON.parse(e.data.slice(cut + 4) || "{}");
-        } catch {
-          // not JSON: nothing to show
-        }
-        if (path === "speech.hypothesis") setLive(r, done, body.Text ?? "");
-        else if (path === "speech.phrase" && body.RecognitionStatus === "Success" && body.DisplayText) {
-          done += body.DisplayText;
-          setLive(r, done, "");
-        } else if (path === "turn.end") r.finish();
-      };
-      sock.onclose = sock.onerror = () => r.finish();
-      return {
-        push: (pcm) => send(audioMsg(rid, new Uint8Array(pcm.buffer))),
-        end: () => send(audioMsg(rid, new Uint8Array(0))),
-        close: () => sock.close(),
-      };
-    }
-
     /**
      * Doubao (Volcengine) streaming recognition, model 2.0. Its binary protocol: a 4-byte header (version | header
      * size, message type | flags, serialization | compression, 0), a 4-byte big-endian size, the payload. One full
      * client request (JSON) opens, audio-only frames follow (raw 16 kHz PCM, ~200ms each), the last flagged 0b0010.
-     * Unlike Azure it takes the conversation itself as context (dialog_ctx), not only a word list, and re-checks each
+     * It takes the conversation itself as context (dialog_ctx), not only a word list, and re-checks each
      * finished sentence with its non-streaming model (enable_nonstream), so what it settles on is the better text.
      */
     async function doubaoLive(r: Rec, hints: string[], dialog: string[]): Promise<Live> {
@@ -532,32 +444,6 @@ export default defineAddon({
       return out;
     }
 
-    function wav(chunks: Int16Array[], header = true): Uint8Array {
-      const n = chunks.reduce((s, c) => s + c.length, 0) * 2;
-      const b = new DataView(new ArrayBuffer(44 + (header ? n : 0)));
-      const str = (o: number, t: string) => [...t].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
-      str(0, "RIFF");
-      b.setUint32(4, header ? 36 + n : 0, true);
-      str(8, "WAVEfmt ");
-      b.setUint32(16, 16, true);
-      b.setUint16(20, 1, true);
-      b.setUint16(22, 1, true);
-      b.setUint32(24, 16000, true);
-      b.setUint32(28, 32000, true);
-      b.setUint16(32, 2, true);
-      b.setUint16(34, 16, true);
-      str(36, "data");
-      b.setUint32(40, header ? n : 0, true);
-      if (header) {
-        let at = 44;
-        for (const c of chunks) {
-          new Int16Array(b.buffer, at, c.length).set(c);
-          at += c.length * 2;
-        }
-      }
-      return new Uint8Array(b.buffer);
-    }
-
     const activeSession = () => g.state().activePane?.sessionId ?? "";
 
     async function startRecording() {
@@ -566,10 +452,11 @@ export default defineAddon({
       const sid = target?.sessionId || activeSession();
       clearTimeout(noteTimer);
       put({ recording: sid || "?", since: Date.now(), live: { done: "", hyp: "" }, swipe: "", note: null });
+      segs = [];
+      segSession = sid;
       try {
         // a missing key says so now, not after you've talked
-        if (asr() === "azure") azureKey();
-        else if (!g.settings.get<string>("doubaoKey")?.trim()) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
+        if (!g.settings.get<string>("doubaoKey")?.trim()) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
@@ -578,19 +465,18 @@ export default defineAddon({
         const node = ctx.createScriptProcessor(4096, 1, 1);
         let finish!: () => void;
         const ended = new Promise<void>((ok) => (finish = ok));
-        const r: Rec = { stream, ctx, node, pcm: [], live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
+        const r: Rec = { stream, ctx, node, samples: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
         rec = r;
         node.onaudioprocess = (e) => {
           const pcm = to16k(e.inputBuffer.getChannelData(0), ctx.sampleRate);
-          r.pcm.push(pcm);
+          r.samples += pcm.length;
           if (r.live) r.live.push(pcm);
           else r.buf.push(pcm);
         };
         ctx.createMediaStreamSource(stream).connect(node);
         node.connect(ctx.destination); // a ScriptProcessor only runs while connected; it outputs silence
-        // Live words are a preview: if the stream can't open, recording goes on and the whole is transcribed on release
         openLive(r, sid).catch((e) => {
-          console.warn("voice: live recognition", e);
+          noteFail(e);
           r.finish();
         });
       } catch (e) {
@@ -606,18 +492,15 @@ export default defineAddon({
     /** Start the chosen recognizer for a recording: hand it what was recorded meanwhile, and the end if it came. */
     async function openLive(r: Rec, sid: string) {
       const hints = await hintsFor(sid, "");
-      let live: Live;
-      if (asr() === "doubao") {
-        // The conversation as context, newest first: the agent's last reply, then the conversation's title
-        let reply = "";
-        try {
-          reply = (await g.sessions.reply(sid)).text;
-        } catch {
-          // no reply yet
-        }
-        const title = g.state().sessions.find((x) => x.id === sid)?.title ?? "";
-        live = await doubaoLive(r, hints, [reply.slice(-600), title].filter(Boolean));
-      } else live = await azureLive(r, hints.slice(0, 100));
+      // The conversation as context, newest first: the agent's last reply, then the conversation's title
+      let reply = "";
+      try {
+        reply = (await g.sessions.reply(sid)).text;
+      } catch {
+        // no reply yet
+      }
+      const title = g.state().sessions.find((x) => x.id === sid)?.title ?? "";
+      const live = await doubaoLive(r, hints, [reply.slice(-600), title].filter(Boolean));
       if (rec !== r && !r.ending) return live.close(); // cancelled meanwhile
       r.live = live;
       for (const c of r.buf) live.push(c);
@@ -631,13 +514,13 @@ export default defineAddon({
       const cancel = st.swipe === "cancel";
       const send = st.swipe === "send";
       rec = null;
-      put({ recording: null, swipe: "" });
+      put({ recording: null, swipe: send ? "send" : "" }); // kept while it is fixed up: the bubble says it will send
       if (!r) return;
       clearTimeout(r.cutoff);
       r.node.disconnect();
       r.stream.getTracks().forEach((t) => t.stop());
       r.ctx.close().catch(() => {});
-      const secs = r.pcm.reduce((s, c) => s + c.length, 0) / 16000;
+      const secs = r.samples / 16000;
       if (cancel || secs < 0.5) {
         r.live?.close();
         dropLive();
@@ -653,49 +536,21 @@ export default defineAddon({
       await new Promise((ok) => setTimeout(ok, 50));
       const to = target;
       const session = to?.sessionId ?? (sid && sid !== "?" ? sid : activeSession());
-      let text = "";
-      let took = "";
       const fixModel = g.settings.get<string>("fixModel")?.trim();
-      const doubao = asr() === "doubao";
-      if (fixModel || doubao) {
-        // What streaming heard: its last sentence settles shortly after the audio ends (Doubao re-checks each
-        // sentence with its non-streaming model, so its text is final as it is). Then, with a fix-up model, the
-        // misheard words fixed from the conversation: measured, "对不起" becomes "对不齐" while talking about layout,
-        // which no phrase list does, in ~1-2s
-        await Promise.race([r.ended, new Promise((ok) => setTimeout(ok, 2500))]);
-        const heard = (st.live.done + st.live.hyp).trim();
-        if (heard) {
-          const tHeard = performance.now();
-          const heardIn = secsSince(t0);
-          if (fixModel) {
-            // A fix that fails (the model is gone, an older Gerdr without g.llm) leaves what was heard
-            text = await fixText(heard, fixModel, session, to?.text ?? "").catch((e) => {
-              console.warn("voice: fix-up failed", e);
-              return "";
-            });
-            took = text ? T(`识别 ${heardIn} · 纠错 ${secsSince(tHeard)}`, `heard ${heardIn} · fixed ${secsSince(tHeard)}`) : "";
-            if (!text && doubao) [text, took] = [heard, T(`识别 ${heardIn}（纠错没成功）`, `heard ${heardIn} (fix-up failed)`)];
-          } else [text, took] = [heard, T(`识别 ${heardIn}`, `heard ${heardIn}`)];
-        }
-      }
-      if (!text && g.settings.get<string>("azureKey")?.trim()) {
-        // Azure without a fix-up model, or streaming heard nothing (its socket didn't open): the whole recording,
-        // transcribed again by Azure's LLM model
-        try {
-          text = await transcribe(new Blob([wav(r.pcm) as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), await hintsFor(session, to?.text ?? ""));
-          took = fixModel
-            ? T(`纠错没成功，改用整理 ${secsSince(t0)}`, `fix-up failed; transcribed in ${secsSince(t0)}`)
-            : T(`整理 ${secsSince(t0)}`, `transcribed in ${secsSince(t0)}`);
-        } catch (e) {
-          noteFail(e);
-        }
-      }
-      if (!text) {
-        await Promise.race([r.ended, new Promise((ok) => setTimeout(ok, 3000))]);
-        text = (st.live.done + st.live.hyp).trim();
-      }
+      // The last sentence settles shortly after the audio ends; with a fix-up model it is then fixed like the ones
+      // before (those were fixed while you talked), so this waits only for that one
+      await Promise.race([r.ended, new Promise((ok) => setTimeout(ok, 2500))]);
+      const heardIn = secsSince(t0);
+      const tHeard = performance.now();
+      if (fixModel) await Promise.race([Promise.all(segs.map((x) => x.job)), new Promise((ok) => setTimeout(ok, 5000))]);
+      const text = shown(st.live.hyp).trim();
+      const took = !fixModel
+        ? ""
+        : segs.some((x) => x.failed)
+          ? T("有句纠错没成功", "a fix-up failed")
+          : T(`识别 ${heardIn} · 纠错 ${secsSince(tHeard)}`, `heard ${heardIn} · fixed ${secsSince(tHeard)}`);
       r.live?.close();
-      put({ busy: null, live: { done: "", hyp: "" } });
+      put({ busy: null, swipe: "", live: { done: "", hyp: "" } });
       if (!text) {
         dropLive();
         return note(T("没听清，再说一次？", "Didn't catch that. Again?"));
@@ -742,8 +597,13 @@ export default defineAddon({
     // The final text replaces what went in live (after what the composer held before the press)
     function deliver(text: string, session: string, to: ComposerContext | null, send: boolean) {
       const mode = g.settings.get<string>("sendMode") || "insert";
+      if (to && (liveBase === null || touched())) {
+        // sent or edited while it was being fixed up: that wins
+        liveBase = lastShown = null;
+        return;
+      }
       const base = liveBase ?? to?.text ?? "";
-      liveBase = null;
+      liveBase = lastShown = null;
       if (send || mode === "send") {
         g.actions.send(session, joinText(base, text)).catch(fail);
         to?.setText("");
@@ -784,14 +644,71 @@ export default defineAddon({
       return decode(audio, "audio/wav");
     };
 
+    /**
+     * Doubao (Volcengine) speech synthesis 2.0, HTTP one-way streaming: one POST, the answer a run of JSON objects
+     * ({code: 0, data: base64 MP3 bytes}…, then {code: 20000000}), read whole here — a piece is a paragraph, ~2s for
+     * ~8s of speech. Same key as recognition (both are 豆包语音 in the console; each service is opened on its own).
+     */
+    const doubao = async (text: string): Promise<Blob> => {
+      const key = g.settings.get<string>("doubaoKey")?.trim();
+      const appId = g.settings.get<string>("doubaoAppId")?.trim();
+      if (!key) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
+      const headers: Record<string, string> = { "X-Api-Resource-Id": "seed-tts-2.0", "X-Api-Request-Id": crypto.randomUUID() };
+      if (appId) Object.assign(headers, { "X-Api-App-Id": appId, "X-Api-Access-Key": key });
+      else headers["X-Api-Key"] = key;
+      const r = await g.fetch("https://openspeech.bytedance.com/api/v3/tts/unidirectional", {
+        method: "POST",
+        headers,
+        body: {
+          user: { uid: "gerdr" },
+          req_params: {
+            text,
+            speaker: g.settings.get<string>("doubaoVoice") || "zh_female_xiaohe_uranus_bigtts",
+            audio_params: { format: "mp3", sample_rate: 24000, speech_rate: g.settings.get<number>("doubaoRate") ?? 0 },
+          },
+        },
+      });
+      const parts: Uint8Array[] = [];
+      let err = "";
+      let at = 0;
+      const t = r.text;
+      // Concatenated JSON objects: cut at each top-level brace (base64 and messages hold no braces)
+      while (at < t.length) {
+        const start = t.indexOf("{", at);
+        if (start < 0) break;
+        let depth = 0;
+        let end = start;
+        for (; end < t.length; end++) {
+          if (t[end] === "{") depth++;
+          else if (t[end] === "}" && --depth === 0) break;
+        }
+        at = end + 1;
+        let o: any;
+        try {
+          o = JSON.parse(t.slice(start, end + 1));
+        } catch {
+          continue;
+        }
+        const code = o.code ?? o.header?.code;
+        if (o.data) parts.push(Uint8Array.from(atob(o.data), (c) => c.charCodeAt(0)));
+        else if (code !== 0 && code !== 20000000) err = `${code}: ${o.message ?? o.header?.message ?? ""}`;
+      }
+      if (!parts.length) {
+        if (/not granted/.test(err))
+          throw new Error(T("豆包语音合成还没开通：控制台 → 豆包语音 → 语音合成，开通 2.0", "Doubao TTS isn't enabled: console → 豆包语音 → speech synthesis, enable 2.0"));
+        throw new Error(`${T("豆包", "Doubao")} ${r.status} ${err || t.slice(0, 200)}`);
+      }
+      return new Blob(parts as Uint8Array<ArrayBuffer>[], { type: "audio/mpeg" });
+    };
+
     const azure = async (text: string): Promise<Blob> => {
       const key = g.settings.get<string>("azureKey")?.trim();
       const region = g.settings.get<string>("azureRegion")?.trim();
       if (!key || !region)
         throw new Error(isZh ? `先在 ${where} 里填 Azure 的 Key 和区域` : `Set the Azure key and region in ${where}`);
-      const voice = g.settings.get<string>("azureVoice")?.trim() || "isZh-CN-XiaoxiaoMultilingualNeural";
+      const voice = g.settings.get<string>("azureVoice")?.trim() || "zh-CN-XiaoxiaoMultilingualNeural";
       const rate = g.settings.get<number>("azureRate") ?? 0;
-      // A voice name starts with its locale (isZh-CN-…); xml:lang must be some locale, and the voice's own is the safe one
+      // A voice name starts with its locale (zh-CN-…); xml:lang must be some locale, and the voice's own is the safe one
       const lang = voice.split("-").slice(0, 2).join("-");
       const ssml =
         `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${xml(lang)}">` +
@@ -816,7 +733,10 @@ export default defineAddon({
     };
 
     // Read the provider at each piece, so switching it in settings applies to the next read without a reload
-    const say = (text: string) => (g.settings.get<string>("ttsProvider") === "mimo" ? mimo(text) : azure(text));
+    const say = (text: string) => {
+      const p = g.settings.get<string>("ttsProvider") || "doubao";
+      return p === "mimo" ? mimo(text) : p === "azure" ? azure(text) : doubao(text);
+    };
 
     // Synthesis runs one piece after another, up to AHEAD pieces past the one playing, without waiting for g.audio to
     // ask; stopping (ctx.signal) ends the generator through g.audio and starts nothing more
@@ -996,6 +916,13 @@ export default defineAddon({
     async function readLatest(sid: string) {
       if (!sid) return;
       unlock(); // inside the tap
+      // Still answering (you just asked): the reply you want is the one coming, not the one before your question
+      if (st.armed.includes(sid)) return put({ armed: st.armed.filter((x) => x !== sid) });
+      const status = g.state().sessions.find((x) => x.id === sid)?.status;
+      if (status === "running" || status === "starting" || status === "waiting") {
+        put({ armed: [...st.armed, sid] });
+        return g.notify(T("它答完就念给你听", "It will be read once the agent is done"));
+      }
       const r = await g.sessions.reply(sid);
       const text = (g.settings.get<string>("scope") === "all" ? r.text : r.final || r.text).trim();
       if (!text) return g.notify(T("这个对话还没有回复", "No reply in this conversation yet"));
@@ -1028,6 +955,20 @@ export default defineAddon({
     }
 
     const offTurn = g.on("turn", async (t) => {
+      if (st.armed.includes(t.sessionId)) {
+        put({ armed: st.armed.filter((x) => x !== t.sessionId) });
+        if (t.stopReason === "cancelled" || !outputOn()) return;
+        const key = `${t.sessionId}:${t.ts}`;
+        played.add(key); // auto read (below) leaves it to this
+        try {
+          const r = await g.sessions.reply(t.sessionId);
+          const text = (g.settings.get<string>("scope") === "all" ? r.text : r.final || r.text).trim();
+          if (text) play({ key, session: t.sessionId, title: titleOf(t.sessionId), text, kind: "reply", announce: false });
+        } catch (e) {
+          fail(e);
+        }
+        return;
+      }
       if (!st.auto || !outputOn() || t.stopReason === "cancelled") return;
       if (t.auto && !g.settings.get<boolean>("includeAuto")) return;
       const key = `${t.sessionId}:${t.ts}`;
@@ -1082,6 +1023,7 @@ export default defineAddon({
       put({ from: where });
       if (ctx) target = ctx; // this composer gets the text (a phone's long press is followed by no click)
       liveBase = target?.text ?? "";
+      lastShown = target ? liveBase : null;
       // The keyboard stays as it is: talking with it up appends to what's typed, and typing goes on after
       put({ anchorEl: boxOf(from) });
       startRecording();
@@ -1285,7 +1227,9 @@ export default defineAddon({
           }}
           onPointerCancel={() => clearTimeout(self.current.timer)}
         >
-          {mine ? <I.Square className="size-3.5 fill-current" /> : <I.Headphones className={g.ui.cn("size-4", s.auto && "text-brand")} />}
+          {mine ? <I.Square className="size-3.5 fill-current" /> : <I.Headphones
+              className={g.ui.cn("size-4", s.auto && "text-brand", ctx && s.armed.includes(ctx.sessionId) && "animate-pulse text-brand")}
+            />}
           {s.auto && s.queue.length > 0 && (
             <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-brand px-0.5 text-center text-[9px] leading-3.5 text-brand-foreground">
               {s.queue.length}
@@ -1297,7 +1241,7 @@ export default defineAddon({
     const listenAction = () =>
       g.composerAction({
         id: "listen",
-        title: T("点：念最新回复（再点停） · 长按：开关自动朗读", "Tap: read the latest reply (again: stop) · hold: auto read on / off"),
+        title: T("点：念最新回复（还在答就等答完再念；再点停） · 长按：开关自动朗读", "Tap: read the latest reply (still answering: once it's done; again: stop) · hold: auto read on / off"),
         render: (ctx) => <Listen ctx={ctx} />,
         icon: <Listen />,
         // The press is handled by Listen itself (tap / hold); a click after it has nothing left to do
@@ -1307,7 +1251,12 @@ export default defineAddon({
     // Each half's buttons exist while its switch is on. A settings change doesn't re-run setup, so look again every
     // second (cheap: two reads) and add or take away the buttons
     const halves = [
-      { on: inputOn, make: () => [micAction(), g.slot("composerInput", TalkSpot)] },
+      // "Hold to talk" over the field is for a phone, where the bar's mic is a small target under a thumb; with a
+      // mouse the mic is easy to hit and the hint in the middle of an empty field is only in the way
+      {
+        on: inputOn,
+        make: () => (matchMedia("(pointer: coarse)").matches ? [micAction(), g.slot("composerInput", TalkSpot)] : [micAction()]),
+      },
       { on: outputOn, make: () => [listenAction()] },
     ].map((h) => ({ ...h, offs: [] as Dispose[] }));
     const syncHalves = () => {
@@ -1368,7 +1317,10 @@ export default defineAddon({
           </div>
         );
       }
-      if (s.recording || s.busy) {
+      // After letting go there's only something to wait for with a fix-up model (the last sentence being fixed);
+      // without one the text is already in the composer, so the bubble just goes
+      const fixing = !!s.busy && !!g.settings.get<string>("fixModel")?.trim();
+      if (s.recording || fixing) {
         const sec = s.recording ? Math.floor((Date.now() - s.since) / 1000) : 0;
         // The words go into the composer only (its draft is kept by the server, so they survive a dropped connection or
         // a reload); a second copy here read as doubled text. The bubble says how long and what letting go does
@@ -1391,14 +1343,14 @@ export default defineAddon({
                     {s.swipe === "cancel"
                       ? T("松手取消", "Let go to cancel")
                       : s.swipe === "send"
-                        ? T("松手直接发送", "Let go to send")
+                        ? T("松手发送", "Let go to send")
                         : T("松手完成 · 上滑取消 · 右滑发送", "Let go · up: cancel · right: send")}
                   </span>
                 </>
               ) : (
                 <>
                   <I.LoaderCircle className="size-3 animate-spin" />
-                  {T("整理中…", "Polishing…")}
+                  {s.swipe === "send" ? T("最后一句纠错后发送…", "Fixing the last sentence, then sending…") : T("最后一句纠错中…", "Fixing the last sentence…")}
                 </>
               )}
             </div>
@@ -1472,26 +1424,13 @@ export default defineAddon({
 
     // Settings: two halves, each behind its switch; a provider's own fields only once it's picked
     const offSettings = g.slot("settings", ({ Field, values, set }) => {
-      const azureFirst = values.asr !== "doubao" && values.enableInput !== false;
       return (
         <div className="space-y-2.5">
           <Field name="enableInput" />
           {values.enableInput !== false && (
             <div className="space-y-2.5 border-l-2 border-border pl-2.5">
-              <Field name="asr" />
-              {values.asr === "doubao" ? (
-                <>
-                  <Field name="doubaoKey" />
-                  <Field name="doubaoAppId" />
-                </>
-              ) : (
-                <>
-                  <Field name="azureKey" />
-                  <Field name="azureRegion" />
-                  <Field name="locale" />
-                  <Field name="enhanced" />
-                </>
-              )}
+              <Field name="doubaoKey" />
+              <Field name="doubaoAppId" />
               <Field name="fixModel" />
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
@@ -1504,7 +1443,10 @@ export default defineAddon({
               <Field name="ttsProvider" />
               {(values.ttsProvider === "mimo"
                 ? ["mimoKey", "mimoVoice", "mimoStyle", "mimoModel", "mimoBaseURL"]
-                : [...(azureFirst ? [] : ["azureKey", "azureRegion"]), "azureVoice", "azureRate"]
+                : values.ttsProvider === "azure"
+                  ? ["azureKey", "azureRegion", "azureVoice", "azureRate"]
+                  : // the key is shared with recognition: shown here only when that half is off
+                    [...(values.enableInput === false ? ["doubaoKey", "doubaoAppId"] : []), "doubaoVoice", "doubaoRate"]
               ).map((k) => (
                 <Field key={k} name={k} />
               ))}
