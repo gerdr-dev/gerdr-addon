@@ -9,7 +9,7 @@
 // enough to need a second pass on release, which replaced what you saw — Doubao re-checks each sentence itself.
 //
 // Output: the speaker beside each message (g.messageAction) reads it, paragraph by paragraph, marking and jumping;
-// 🎧 by the composer reads the conversation's latest reply now (tap) or turns auto read on (hold, per device): each finished
+// 🔊 by the composer reads the conversation's latest reply now (tap) or turns auto read on (hold, per device): each finished
 // reply's last stretch, queued when several agents finish, each turn once, one waiting on you first. The page sleeps
 // with the App in the background, so listening works with Gerdr on screen.
 
@@ -40,7 +40,7 @@ type State = {
   last: Item | null;
   // auto read came back on with the page (a reload) and no tap has unlocked sound yet: the WebView would refuse it
   needTap: boolean;
-  // conversations whose 🎧 was tapped while the agent was still answering: their reply is read when the turn ends
+  // conversations whose 🔊 was tapped while the agent was still answering: their reply is read when the turn ends
   armed: string[];
 };
 let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", from: "mic", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
@@ -1195,7 +1195,7 @@ export default defineAddon({
     });
 
 
-    // 🎧, one button for listening: tap = this conversation's latest reply now (tap again: stop); hold = auto read on /
+    // 🔊, one button for listening: tap = this conversation's latest reply now (tap again: stop); hold = auto read on /
     // off (this device). Brand-coloured while auto read is on, with how many replies wait
     const LONG_MS = 500;
     function Listen({ ctx }: { ctx?: ComposerContext }) {
@@ -1227,7 +1227,7 @@ export default defineAddon({
           }}
           onPointerCancel={() => clearTimeout(self.current.timer)}
         >
-          {mine ? <I.Square className="size-3.5 fill-current" /> : <I.Headphones
+          {mine ? <I.Square className="size-3.5 fill-current" /> : <I.Volume2
               className={g.ui.cn("size-4", s.auto && "text-brand", ctx && s.armed.includes(ctx.sessionId) && "animate-pulse text-brand")}
             />}
           {s.auto && s.queue.length > 0 && (
@@ -1365,7 +1365,7 @@ export default defineAddon({
           : T(`${s.queue.length} 条没听`, `${s.queue.length} waiting`);
       return (
         <div className="fixed left-1/2 top-2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-1 rounded-full border bg-background py-1 pl-3 pr-1 text-sm shadow-lg">
-          <I.Headphones className="size-4 shrink-0 text-brand" />
+          <I.Volume2 className="size-4 shrink-0 text-brand" />
           <span className="min-w-0 truncate px-1">{label}</span>
           {s.playing && s.queue.length > 0 && <span className="shrink-0 text-xs text-muted-foreground">+{s.queue.length}</span>}
           {s.playing ? (

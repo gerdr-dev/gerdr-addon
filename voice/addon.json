@@ -1,7 +1,7 @@
 {
   "name": "语音",
   "version": "0.3.0",
-  "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点消息旁的喇叭或 🎧 听回复，长按 🎧 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
+  "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点喇叭听回复，长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
   "settings": [
@@ -77,7 +77,7 @@
       "title": "朗读",
       "type": "boolean",
       "default": true,
-      "description": "消息旁的喇叭，和输入框旁的 🎧：点一下念最新回复，长按开关自动朗读。"
+      "description": "消息旁的 🔊 念那一条；输入框旁的 🔊：点一下念最新回复，长按开关自动朗读。"
     },
     {
       "key": "ttsProvider",
@@ -308,7 +308,7 @@
           "label": "叮一声，我点了再念"
         }
       ],
-      "description": "长按输入框旁的 🎧 打开（只对这台设备）。几个 agent 一起做完时排队，一条接一条；每一轮只念一次。"
+      "description": "长按输入框旁的 🔊 打开（只对这台设备）。几个 agent 一起做完时排队，一条接一条；每一轮只念一次。"
     },
     {
       "key": "includeAuto",
@@ -328,7 +328,7 @@
   "i18n": {
     "en": {
       "name": "Voice",
-      "description": "Hold 🎤 to talk (Doubao recognition, words go into the composer as you speak). Tap the speaker on a message or 🎧 to hear a reply; hold 🎧 for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
+      "description": "Hold 🎤 to talk (Doubao recognition, words go into the composer as you speak). Tap a speaker to hear a reply; hold the one by the composer for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
       "settings": {
         "azureKey": {
           "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to read aloud when Azure is picked."
@@ -355,7 +355,7 @@
             "auto": "Read each as it finishes",
             "manual": "Chime, read when I tap"
           },
-          "description": "Turn it on by holding 🎧 by the composer (this device only). Agents finishing together queue up; each turn is read once."
+          "description": "Turn it on by holding 🔊 by the composer (this device only). Agents finishing together queue up; each turn is read once."
         },
         "includeAuto": {
           "title": "Also read turns the agent started itself",
@@ -404,7 +404,7 @@
         },
         "enableOutput": {
           "title": "Read aloud",
-          "description": "The speaker beside messages, and 🎧 by the composer: tap to read the latest reply, hold to turn auto read on / off."
+          "description": "The speaker beside a message reads it; the one by the composer: tap to read the latest reply, hold to turn auto read on / off."
         },
         "mimoKey": {
           "title": "MiMo API Key",
