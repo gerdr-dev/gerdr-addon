@@ -261,23 +261,32 @@ export default defineAddon({
     let rec: Rec | null = null;
     /** The composer that gets the text: set when the mic is pressed (its composer's ctx). */
     let target: ComposerContext | null = null;
-    // What the composer held when the press began: the words go in live after it, as said (like a keyboard's voice
-    // input), and are replaced by the fixed-up text on release; cancelling puts it back. null: no press going on
+    // What the composer held before the caret when the press began: the words go in live after it, as said (like a
+    // keyboard's voice input), and are replaced by the fixed-up text on release; cancelling puts it back. null: no
+    // press going on. liveTail: what was after the caret (a selection is talked over), kept after the words
     let liveBase: string | null = null;
+    let liveTail = "";
     // What we last wrote into the composer. The person may send (or edit) the live text before the fix-up comes
     // back: then the composer no longer holds it, and nothing more is written — late words or the fixed-up copy
     // would put back a message already sent
     let lastShown: string | null = null;
     const joinText = (base: string, t: string) => (base && t ? base + (/\s$/.test(base) ? "" : " ") + t : base + t);
+    // The composer's text with t said at the caret, and where the caret goes (right after t)
+    const around = (base: string, t: string) => {
+      const head = joinText(base, t);
+      const tail = t && liveTail && !/\s$/.test(head) && !/^\s/.test(liveTail) ? " " + liveTail : liveTail;
+      return { text: head + tail, caret: head.length };
+    };
     const touched = () => !!target && lastShown !== null && target.text !== lastShown;
     const showLive = (t: string) => {
       if (!target || liveBase === null) return;
       if (touched()) return void (liveBase = lastShown = null);
-      lastShown = joinText(liveBase, t);
-      target.setText(lastShown);
+      const o = around(liveBase, t);
+      lastShown = o.text;
+      target.setText(o.text, o.caret);
     };
     const dropLive = () => {
-      if (target && liveBase !== null && !touched()) target.setText(liveBase);
+      if (target && liveBase !== null && !touched()) target.setText(liveBase + liveTail, liveBase.length);
       liveBase = lastShown = null;
     };
 
@@ -602,12 +611,13 @@ export default defineAddon({
         liveBase = lastShown = null;
         return;
       }
-      const base = liveBase ?? to?.text ?? "";
+      if (liveBase === null) liveTail = "";
+      const o = around(liveBase ?? to?.text ?? "", text);
       liveBase = lastShown = null;
       if (send || mode === "send") {
-        g.actions.send(session, joinText(base, text)).catch(fail);
+        g.actions.send(session, o.text).catch(fail);
         to?.setText("");
-      } else if (to) to.setText(joinText(base, text));
+      } else if (to) to.setText(o.text, o.caret);
       else g.actions.insertText(session, text);
     }
 
@@ -1022,9 +1032,13 @@ export default defineAddon({
       pressAt = { x, y };
       put({ from: where });
       if (ctx) target = ctx; // this composer gets the text (a phone's long press is followed by no click)
-      liveBase = target?.text ?? "";
-      lastShown = target ? liveBase : null;
-      // The keyboard stays as it is: talking with it up appends to what's typed, and typing goes on after
+      // The words go in where the caret is (over what's selected), like typing. A Gerdr from before ctx.selection: the end
+      const t = target?.text ?? "";
+      const sel = target?.selection ?? { start: t.length, end: t.length };
+      liveBase = t.slice(0, sel.start);
+      liveTail = t.slice(sel.end);
+      lastShown = target ? t : null;
+      // The keyboard stays as it is: talking with it up puts the words at the caret, and typing goes on after
       put({ anchorEl: boxOf(from) });
       startRecording();
     }
