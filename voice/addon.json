@@ -1,6 +1,6 @@
 {
   "name": "语音",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点喇叭听回复，长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
@@ -260,9 +260,70 @@
     {
       "key": "azureVoice",
       "title": "音色",
-      "type": "string",
+      "type": "select",
       "default": "zh-CN-XiaoxiaoMultilingualNeural",
-      "description": "语音名，如 zh-CN-XiaoxiaoMultilingualNeural、zh-CN-YunxiNeural、en-US-AvaMultilingualNeural。完整列表见 Azure 的语音库（Voice Gallery）。"
+      "options": [
+        {
+          "value": "zh-CN-XiaoxiaoMultilingualNeural",
+          "label": "晓晓 多语言（女声，中英混读）"
+        },
+        {
+          "value": "zh-CN-XiaoxiaoNeural",
+          "label": "晓晓（女声）"
+        },
+        {
+          "value": "zh-CN-XiaochenMultilingualNeural",
+          "label": "晓辰 多语言（女声）"
+        },
+        {
+          "value": "zh-CN-XiaoyiNeural",
+          "label": "晓伊（女声）"
+        },
+        {
+          "value": "zh-CN-YunxiNeural",
+          "label": "云希（男声）"
+        },
+        {
+          "value": "zh-CN-YunjianNeural",
+          "label": "云健（男声）"
+        },
+        {
+          "value": "zh-CN-YunyangNeural",
+          "label": "云扬（男声，播报）"
+        },
+        {
+          "value": "zh-CN-YunxiaNeural",
+          "label": "云夏（男声，少年）"
+        },
+        {
+          "value": "en-US-AvaMultilingualNeural",
+          "label": "Ava 多语言（英语女声）"
+        },
+        {
+          "value": "en-US-EmmaMultilingualNeural",
+          "label": "Emma 多语言（英语女声）"
+        },
+        {
+          "value": "en-US-AndrewMultilingualNeural",
+          "label": "Andrew 多语言（英语男声）"
+        },
+        {
+          "value": "en-US-BrianMultilingualNeural",
+          "label": "Brian 多语言（英语男声）"
+        },
+        {
+          "value": "custom",
+          "label": "自定义…"
+        }
+      ],
+      "description": "常用的几个；别的选「自定义…」，在下面填语音名。用「试听」听一下。"
+    },
+    {
+      "key": "azureVoiceName",
+      "title": "语音名",
+      "type": "string",
+      "default": "",
+      "description": "Azure 语音库（Voice Gallery）里的语音名，如 zh-CN-XiaohanNeural、en-GB-SoniaNeural。"
     },
     {
       "key": "azureRate",
@@ -372,7 +433,22 @@
         },
         "azureVoice": {
           "title": "Voice",
-          "description": "A voice name, e.g. en-US-AvaMultilingualNeural, zh-CN-XiaoxiaoMultilingualNeural. Full list: Azure's Voice Gallery."
+          "description": "A few common ones; for any other pick \"Custom…\" and type its name below. Try it with Preview.",
+          "options": {
+            "zh-CN-XiaoxiaoMultilingualNeural": "Xiaoxiao Multilingual (female, mixed Chinese / English)",
+            "zh-CN-XiaoxiaoNeural": "Xiaoxiao (female)",
+            "zh-CN-XiaochenMultilingualNeural": "Xiaochen Multilingual (female)",
+            "zh-CN-XiaoyiNeural": "Xiaoyi (female)",
+            "zh-CN-YunxiNeural": "Yunxi (male)",
+            "zh-CN-YunjianNeural": "Yunjian (male)",
+            "zh-CN-YunyangNeural": "Yunyang (male, newsreader)",
+            "zh-CN-YunxiaNeural": "Yunxia (male, young)",
+            "en-US-AvaMultilingualNeural": "Ava Multilingual (English, female)",
+            "en-US-EmmaMultilingualNeural": "Emma Multilingual (English, female)",
+            "en-US-AndrewMultilingualNeural": "Andrew Multilingual (English, male)",
+            "en-US-BrianMultilingualNeural": "Brian Multilingual (English, male)",
+            "custom": "Custom…"
+          }
         },
         "azureRate": {
           "title": "Speed",
@@ -436,6 +512,10 @@
         "doubaoRate": {
           "title": "Speed",
           "description": "How much faster than normal: 0 is normal, negative is slower."
+        },
+        "azureVoiceName": {
+          "title": "Voice name",
+          "description": "A voice name from Azure's Voice Gallery, e.g. zh-CN-XiaohanNeural, en-GB-SoniaNeural."
         }
       }
     }

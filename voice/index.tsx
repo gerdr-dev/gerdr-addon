@@ -250,6 +250,7 @@ export default defineAddon({
       stream: MediaStream;
       ctx: AudioContext;
       node: ScriptProcessorNode;
+      level: AnalyserNode; // the mic's loudness, read by the bubble's waveform
       samples: number; // how much was recorded (16 kHz)
       live: Live | null; // null until the recognizer's socket is set up
       buf: Int16Array[]; // recorded before that, handed over then
@@ -280,7 +281,10 @@ export default defineAddon({
     const touched = () => !!target && lastShown !== null && target.text !== lastShown;
     const showLive = (t: string) => {
       if (!target || liveBase === null) return;
-      if (touched()) return void (liveBase = lastShown = null);
+      if (touched()) {
+        mark(`touched(${target.text.length}/${lastShown?.length})`);
+        return void (liveBase = lastShown = null);
+      }
       const o = around(liveBase, t);
       lastShown = o.text;
       target.setText(o.text, o.caret);
@@ -358,6 +362,8 @@ export default defineAddon({
       else headers["X-Api-Key"] = key;
       const sock = await g.socket("wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async", { headers });
       sock.binaryType = "arraybuffer";
+      mark("sock");
+      let got = 0;
       const frame = (type: number, flags: number, json: boolean, payload: Uint8Array) => {
         const out = new Uint8Array(8 + payload.length);
         out.set([0x11, (type << 4) | flags, json ? 0x10 : 0x00, 0]);
@@ -401,9 +407,11 @@ export default defineAddon({
         const v = new DataView(e.data);
         const type = v.getUint8(1) >> 4;
         const flags = v.getUint8(1) & 15;
+        if (got++ === 0) mark("first");
         if (type === 0b1111) {
           const code = v.getUint32(4);
           const msg = new TextDecoder().decode(new Uint8Array(e.data, 12, v.getUint32(8)));
+          mark(`err(${code} ${msg.slice(0, 80)})`);
           note(`${T("豆包", "Doubao")} ${code}: ${msg}`, true);
           return r.finish();
         }
@@ -419,13 +427,27 @@ export default defineAddon({
         } catch {
           return;
         }
-        const text: string = res?.result?.text ?? "";
+        // A response without a result (or with empty text once words are in) is not the recognizer taking them back:
+        // in "full" mode every result holds everything heard. Taking it as one wiped the words from the composer
+        if (!res?.result) return flags & 2 ? r.finish() : undefined;
+        const text: string = res.result.text ?? "";
+        if (!text && segs.length + st.live.hyp.length > 0) return flags & 2 ? r.finish() : undefined;
         const settled = ((res?.result?.utterances ?? []) as any[]).filter((u) => u.definite).map((u) => u.text ?? "").join("");
         if (settled && text.startsWith(settled)) setLive(r, settled, text.slice(settled.length));
         else setLive(r, "", text);
-        if (flags & 2) r.finish(); // the last response
+        if (flags & 2) {
+          mark(`last(n=${got} len=${text.length})`);
+          r.finish(); // the last response
+        }
       };
-      sock.onclose = sock.onerror = () => r.finish();
+      sock.onclose = (e) => {
+        mark(`close(${e.code}${e.reason ? " " + e.reason.slice(0, 60) : ""} n=${got})`);
+        r.finish();
+      };
+      sock.onerror = () => {
+        mark("sockerr");
+        r.finish();
+      };
       return {
         push: (pcm) => {
           held.push(pcm);
@@ -455,6 +477,25 @@ export default defineAddon({
 
     const activeSession = () => g.state().activePane?.sessionId ?? "";
 
+    // One line per recording in Gerdr's log (gerdr.log, "ui client error" build=voice-trace): what happened when, and
+    // how it ended. Recordings that ended with no words and no note couldn't be told apart from the outside: the log
+    // only showed the socket opening. Sent the way the perf-probe add-on sends its lines (a fake build id keeps them
+    // out of the rescue panel). Temporary, until the silent failures are understood.
+    let tr: { t0: number; ev: string[] } | null = null;
+    const mark = (what: string) => tr && tr.ev.push(`${what}@${Math.round(performance.now() - tr.t0)}`);
+    const sendTrace = (end: string) => {
+      if (!tr) return;
+      mark(end);
+      const line = tr.ev.join(" ");
+      tr = null;
+      const base = ((window as any).__GERDR_UI__ || {}).base || "";
+      fetch(base + "/api/ui/errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Gerdr": "1" },
+        body: JSON.stringify({ build: "voice-trace", items: [{ source: "voice", message: line }] }),
+      }).catch(() => {});
+    };
+
     async function startRecording() {
       if (rec || st.busy) return;
       g.audio.stop(); // you're talking: whatever was being read stops
@@ -463,18 +504,27 @@ export default defineAddon({
       put({ recording: sid || "?", since: Date.now(), live: { done: "", hyp: "" }, swipe: "", note: null });
       segs = [];
       segSession = sid;
+      tr = { t0: performance.now(), ev: ["press@0"] };
+      // What the recognizer is told about the conversation needs a round trip or two (slow over the remote link):
+      // started now, alongside the mic, not after it. The socket used to open only once both were done, and a short
+      // recording could end before it was even up
+      const context = recognizerContext(sid);
+      context.catch(() => {});
       try {
         // a missing key says so now, not after you've talked
         if (!g.settings.get<string>("doubaoKey")?.trim()) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
+        mark("mic");
         if (!st.recording) return stream.getTracks().forEach((t) => t.stop()); // let go while the mic was starting
         const ctx = new AudioContext();
         const node = ctx.createScriptProcessor(4096, 1, 1);
         let finish!: () => void;
         const ended = new Promise<void>((ok) => (finish = ok));
-        const r: Rec = { stream, ctx, node, samples: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
+        const level = ctx.createAnalyser();
+        level.fftSize = 1024;
+        const r: Rec = { stream, ctx, node, level, samples: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
         rec = r;
         node.onaudioprocess = (e) => {
           const pcm = to16k(e.inputBuffer.getChannelData(0), ctx.sampleRate);
@@ -482,14 +532,18 @@ export default defineAddon({
           if (r.live) r.live.push(pcm);
           else r.buf.push(pcm);
         };
-        ctx.createMediaStreamSource(stream).connect(node);
+        const src = ctx.createMediaStreamSource(stream);
+        src.connect(node);
+        src.connect(level);
         node.connect(ctx.destination); // a ScriptProcessor only runs while connected; it outputs silence
-        openLive(r, sid).catch((e) => {
+        openLive(r, context).catch((e) => {
+          mark(`fail(${e instanceof Error ? e.message : String(e)})`);
           noteFail(e);
           r.finish();
         });
       } catch (e) {
         put({ recording: null });
+        sendTrace(`micfail(${(e as any)?.name ?? e})`);
         noteFail(
           (e as any)?.name === "NotAllowedError"
             ? T("没有麦克风权限：在系统设置里允许 Gerdr 用麦克风", "No microphone permission: allow it for Gerdr in the system settings")
@@ -499,17 +553,22 @@ export default defineAddon({
     }
 
     /** Start the chosen recognizer for a recording: hand it what was recorded meanwhile, and the end if it came. */
-    async function openLive(r: Rec, sid: string) {
-      const hints = await hintsFor(sid, "");
+    async function recognizerContext(sid: string) {
+      const [hints, reply] = await Promise.all([
+        hintsFor(sid, ""),
+        g.sessions.reply(sid).then(
+          (x) => x.text,
+          () => "", // no reply yet
+        ),
+      ]);
       // The conversation as context, newest first: the agent's last reply, then the conversation's title
-      let reply = "";
-      try {
-        reply = (await g.sessions.reply(sid)).text;
-      } catch {
-        // no reply yet
-      }
       const title = g.state().sessions.find((x) => x.id === sid)?.title ?? "";
-      const live = await doubaoLive(r, hints, [reply.slice(-600), title].filter(Boolean));
+      return { hints, dialog: [reply.slice(-600), title].filter(Boolean) };
+    }
+    async function openLive(r: Rec, context: Promise<{ hints: string[]; dialog: string[] }>) {
+      const { hints, dialog } = await context;
+      mark("ctx");
+      const live = await doubaoLive(r, hints, dialog);
       if (rec !== r && !r.ending) return live.close(); // cancelled meanwhile
       r.live = live;
       for (const c of r.buf) live.push(c);
@@ -530,7 +589,9 @@ export default defineAddon({
       r.stream.getTracks().forEach((t) => t.stop());
       r.ctx.close().catch(() => {});
       const secs = r.samples / 16000;
+      mark(`up(${secs.toFixed(1)}s live=${!!r.live})`);
       if (cancel || secs < 0.5) {
+        sendTrace(cancel ? "cancel" : "short");
         r.live?.close();
         dropLive();
         if (!cancel) note(T("按住说话，说完松手", "Hold to talk, let go when done"));
@@ -547,8 +608,10 @@ export default defineAddon({
       const session = to?.sessionId ?? (sid && sid !== "?" ? sid : activeSession());
       const fixModel = g.settings.get<string>("fixModel")?.trim();
       // The last sentence settles shortly after the audio ends; with a fix-up model it is then fixed like the ones
-      // before (those were fixed while you talked), so this waits only for that one
-      await Promise.race([r.ended, new Promise((ok) => setTimeout(ok, 2500))]);
+      // before (those were fixed while you talked), so this waits only for that one. Up to 10s: it used to be 2.5s,
+      // and over the remote link a short recording's socket could still be opening then, so everything said was
+      // dropped as "didn't catch that". The bubble says it's still recognizing meanwhile
+      await Promise.race([r.ended, new Promise((ok) => setTimeout(ok, 10_000))]);
       const heardIn = secsSince(t0);
       const tHeard = performance.now();
       if (fixModel) await Promise.race([Promise.all(segs.map((x) => x.job)), new Promise((ok) => setTimeout(ok, 5000))]);
@@ -561,10 +624,11 @@ export default defineAddon({
       r.live?.close();
       put({ busy: null, swipe: "", live: { done: "", hyp: "" } });
       if (!text) {
+        sendTrace("empty");
         dropLive();
         return note(T("没听清，再说一次？", "Didn't catch that. Again?"));
       }
-      deliver(text, session, to, send);
+      sendTrace(deliver(text, session, to, send));
       if (took && !st.note) note(took);
     }
 
@@ -604,12 +668,13 @@ export default defineAddon({
     }
 
     // The final text replaces what went in live (after what the composer held before the press)
-    function deliver(text: string, session: string, to: ComposerContext | null, send: boolean) {
+    function deliver(text: string, session: string, to: ComposerContext | null, send: boolean): string {
       const mode = g.settings.get<string>("sendMode") || "insert";
       if (to && (liveBase === null || touched())) {
         // sent or edited while it was being fixed up: that wins
+        const why = liveBase === null ? "skip(base)" : `skip(touched ${to.text.length}/${lastShown?.length})`;
         liveBase = lastShown = null;
-        return;
+        return why;
       }
       if (liveBase === null) liveTail = "";
       const o = around(liveBase ?? to?.text ?? "", text);
@@ -617,8 +682,10 @@ export default defineAddon({
       if (send || mode === "send") {
         g.actions.send(session, o.text).catch(fail);
         to?.setText("");
+        return `sent(${text.length})`;
       } else if (to) to.setText(o.text, o.caret);
       else g.actions.insertText(session, text);
+      return `ok(${text.length})`;
     }
 
     const stopRecording = (cancel = false) => {
@@ -716,7 +783,8 @@ export default defineAddon({
       const region = g.settings.get<string>("azureRegion")?.trim();
       if (!key || !region)
         throw new Error(isZh ? `先在 ${where} 里填 Azure 的 Key 和区域` : `Set the Azure key and region in ${where}`);
-      const voice = g.settings.get<string>("azureVoice")?.trim() || "zh-CN-XiaoxiaoMultilingualNeural";
+      const picked = g.settings.get<string>("azureVoice")?.trim();
+      const voice = (picked === "custom" ? g.settings.get<string>("azureVoiceName")?.trim() : picked) || "zh-CN-XiaoxiaoMultilingualNeural";
       const rate = g.settings.get<number>("azureRate") ?? 0;
       // A voice name starts with its locale (zh-CN-…); xml:lang must be some locale, and the voice's own is the safe one
       const lang = voice.split("-").slice(0, 2).join("-");
@@ -1066,13 +1134,31 @@ export default defineAddon({
       },
       onPointerMove: (e: any) => movePress(e.clientX, e.clientY),
       onPointerUp: () => st.recording && finishRecording(),
-      onPointerCancel: () => st.recording && stopRecording(true),
+      onPointerCancel: (e: any) => lostPress(`mic ${e.currentTarget?.isConnected ? "in" : "gone"}`),
     });
 
     // The mic: right after the attach button, pinned there (place "start") so it never moves; hold it to talk
     // Cancel a touch's default gestures on an element (natively: React's touchstart is passive): no long-press menu,
     // no system long-press buzz (the press buzzes itself on starting), and Android can't hand the long press to a
     // bigger input nearby. Pointer events still come
+    // The browser took the pointer away mid-press (pointercancel) though the finger is still down and didn't move:
+    // seen on the Android App, 1.5–2.5s into a still press, every time for a while. That used to count as "cancel"
+    // and dropped everything said, with no word about it. Now the recording goes on, and ends as a normal release
+    // when the finger really lifts: touch events still come after the pointer is cancelled (touchend), and a touch
+    // that's cancelled too, or the next tap anywhere, ends it the same way. The swipes can't be read meanwhile.
+    function lostPress(why: string) {
+      if (!st.recording) return;
+      mark(`lost(${why})`);
+      const end = (e: Event) => {
+        off();
+        mark(e.type);
+        if (st.recording) finishRecording();
+      };
+      const kinds = ["touchend", "touchcancel", "pointerup"];
+      const off = () => kinds.forEach((k) => document.removeEventListener(k, end, true));
+      kinds.forEach((k) => document.addEventListener(k, end, true));
+    }
+
     function useNoTouchDefaults(el: () => HTMLElement | null | undefined, deps: unknown[]) {
       useEffect(() => {
         const e = el();
@@ -1187,7 +1273,7 @@ export default defineAddon({
           }}
           onPointerCancel={() => {
             clearTimeout(self.current.timer);
-            if (self.current.held) stopRecording(true);
+            if (self.current.held) lostPress(`spot ${self.current.el?.isConnected ? "in" : "gone"}`);
           }}
         >
           <I.Mic className="size-4" />
@@ -1308,6 +1394,60 @@ export default defineAddon({
       return el && el.isConnected ? r : null;
     }
 
+    // The bubble's waveform: the mic's loudness over the last couple of seconds, newest on the right, so you can see
+    // it hears you (and how loud) before any words show up. Drawn on a canvas from requestAnimationFrame, outside
+    // React: the bubble itself only re-renders twice a second for the timer
+    const BAR = 2, GAP = 2, STEP_MS = 50; // a new bar every 50 ms: scrolls at the same speed at any frame rate
+    function Wave({ muted }: { muted: boolean }) {
+      const cv = g.React.useRef<HTMLCanvasElement | null>(null);
+      useEffect(() => {
+        const c = cv.current;
+        if (!c) return;
+        const g2 = c.getContext("2d")!;
+        const buf = new Float32Array(1024);
+        let hist: number[] = [];
+        let raf = 0;
+        let last = 0;
+        let peak = 0; // loudest frame since the last bar: a short syllable between two bars still shows
+        const draw = (now: number) => {
+          raf = requestAnimationFrame(draw);
+          const an = rec?.level;
+          if (an) {
+            an.getFloatTimeDomainData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+            const db = 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-6);
+            peak = Math.max(peak, Math.min(1, Math.max(0, (db + 55) / 40))); // -55 dB (room) .. -15 dB (loud) → 0..1
+          }
+          if (now - last < STEP_MS) return;
+          last = now;
+          const dpr = window.devicePixelRatio || 1;
+          const w = c.clientWidth, h = c.clientHeight;
+          if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+            c.width = Math.round(w * dpr);
+            c.height = Math.round(h * dpr);
+          }
+          const n = Math.max(1, Math.floor((w + GAP) / (BAR + GAP)));
+          hist.push(peak);
+          peak = 0;
+          if (hist.length > n) hist = hist.slice(hist.length - n);
+          g2.setTransform(dpr, 0, 0, dpr, 0, 0);
+          g2.clearRect(0, 0, w, h);
+          g2.fillStyle = getComputedStyle(c).color; // the theme's token via the text-* class, not a fixed colour
+          const x0 = w - hist.length * (BAR + GAP) + GAP;
+          hist.forEach((v, i) => {
+            const bh = Math.max(2, v * h);
+            g2.beginPath();
+            g2.roundRect(x0 + i * (BAR + GAP), (h - bh) / 2, BAR, bh, BAR / 2);
+            g2.fill();
+          });
+        };
+        raf = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(raf);
+      }, []);
+      return <canvas ref={cv} className={g.ui.cn("block h-4 min-w-0 flex-1", muted ? "text-muted-foreground/50" : "text-bad")} />;
+    }
+
     function Bar() {
       const s = useSt();
       const anchor = useBoxRect(s.anchorEl, !!(s.recording || s.busy || s.note));
@@ -1331,10 +1471,10 @@ export default defineAddon({
           </div>
         );
       }
-      // After letting go there's only something to wait for with a fix-up model (the last sentence being fixed);
-      // without one the text is already in the composer, so the bubble just goes
+      // After letting go: the recognizer's last words (and, with a fix-up model, the last sentence's fix). Usually
+      // quick, but over a slow link it can take seconds, and a bubble that just went away read as "nothing happened"
       const fixing = !!s.busy && !!g.settings.get<string>("fixModel")?.trim();
-      if (s.recording || fixing) {
+      if (s.recording || s.busy) {
         const sec = s.recording ? Math.floor((Date.now() - s.since) / 1000) : 0;
         // The words go into the composer only (its draft is kept by the server, so they survive a dropped connection or
         // a reload); a second copy here read as doubled text. The bubble says how long and what letting go does
@@ -1353,18 +1493,25 @@ export default defineAddon({
                   <span className="tabular-nums">
                     {Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")}
                   </span>
-                  <span className={g.ui.cn("ml-auto", s.swipe === "cancel" && "font-medium text-bad", s.swipe === "send" && "font-medium text-brand")}>
+                  <Wave muted={s.swipe === "cancel"} />
+                  <span className={g.ui.cn("shrink-0", s.swipe === "cancel" && "font-medium text-bad", s.swipe === "send" && "font-medium text-brand")}>
                     {s.swipe === "cancel"
                       ? T("松手取消", "Let go to cancel")
                       : s.swipe === "send"
                         ? T("松手发送", "Let go to send")
-                        : T("松手完成 · 上滑取消 · 右滑发送", "Let go · up: cancel · right: send")}
+                        : T("上滑取消 · 右滑发送", "Up: cancel · right: send")}
                   </span>
                 </>
               ) : (
                 <>
                   <I.LoaderCircle className="size-3 animate-spin" />
-                  {s.swipe === "send" ? T("最后一句纠错后发送…", "Fixing the last sentence, then sending…") : T("最后一句纠错中…", "Fixing the last sentence…")}
+                  {fixing
+                    ? s.swipe === "send"
+                      ? T("最后一句纠错后发送…", "Fixing the last sentence, then sending…")
+                      : T("最后一句纠错中…", "Fixing the last sentence…")
+                    : s.swipe === "send"
+                      ? T("识别完就发送…", "Recognizing, then sending…")
+                      : T("识别中…", "Recognizing…")}
                 </>
               )}
             </div>
@@ -1414,26 +1561,62 @@ export default defineAddon({
     const offBar = g.slot("overlay", Bar);
 
     // Settings: what to set first (the key), then input, then reading
-    // The models configured in Gerdr, one tap to pick (the field above takes any provider/model too)
+    // The fix-up model, as a dropdown of the models configured in Gerdr (g.llm.models(), known only at run time, so
+    // not a select in addon.json): it was a text field with a row of chips under it, one per model, which took a lot
+    // of room. Built from g.ui.Popover and styled like gerdr's own select. "None" first: it's the default, and most
+    // people never need a fix-up. A value typed in before (not among the models) stays listed.
     function ModelPick({ value, set }: { value: string; set: (v: string | null) => void }) {
       const [models, setModels] = useState<string[]>([]);
+      const [open, setOpen] = useState(false);
       useEffect(() => {
         g.llm.models().then(setModels, () => {});
       }, []);
-      if (!models.length) return null;
+      const list = ["", ...(value && !models.includes(value) ? [value] : []), ...models];
+      const name = (m: string) => m || T("不纠错（默认）", "None (default)");
       return (
-        <div className="-mt-1 flex flex-wrap gap-1">
-          {[...models, ""].map((m) => (
-            <button
-              key={m || "none"}
-              className={g.ui.cn("rounded-md border px-1.5 py-0.5 text-xs", m === value ? "border-brand text-brand" : "text-muted-foreground hover:bg-muted")}
-              onClick={() => set(m || null)}
-            >
-              {m || T("不纠错", "None")}
-            </button>
-          ))}
+        <div className="text-[12px]">
+          <div className="flex gap-2 max-md:flex-col max-md:items-stretch max-md:gap-1 md:items-center">
+            <span className="min-w-0 md:flex-1">{T("纠错模型", "Fix-up model")}</span>
+            <g.ui.Popover open={open} onOpenChange={setOpen}>
+              <g.ui.PopoverTrigger asChild>
+                <button className="flex h-7 items-center justify-between gap-2 whitespace-nowrap rounded-md border bg-transparent px-2.5 text-[12px] max-md:w-full md:min-w-44">
+                  <span className={g.ui.cn("truncate", !value && "text-muted-foreground")}>{name(value)}</span>
+                  <I.ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              </g.ui.PopoverTrigger>
+              <g.ui.PopoverContent align="end" className="max-h-72 w-64 overflow-y-auto p-1">
+                {list.map((m) => (
+                  <button
+                    key={m || "none"}
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] hover:bg-muted"
+                    onClick={() => {
+                      set(m || null);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{name(m)}</span>
+                    {m === value && <I.Check className="size-3.5 shrink-0" />}
+                  </button>
+                ))}
+              </g.ui.PopoverContent>
+            </g.ui.Popover>
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {T(
+              "一般不用：每说完一句就交给这个模型，结合对话改同音字和术语。列的是 Gerdr 设置 → 模型里配好的；开着时松手后要等最后一句纠完。",
+              "Rarely needed: each finished sentence goes to this model, which fixes misheard words using the conversation. Lists the models set up in Gerdr (Settings → Models); with one on, letting go waits for the last fix.",
+            )}
+          </div>
         </div>
       );
+    }
+
+    // azureVoice used to be a text field: a name typed there that isn't one of the select's options now goes to the
+    // "custom" name field, so it keeps being used and the select shows "Custom…" instead of nothing
+    {
+      const old = g.settings.get<string>("azureVoice")?.trim();
+      const listed = ["zh-CN-XiaoxiaoMultilingualNeural", "zh-CN-XiaoxiaoNeural", "zh-CN-XiaochenMultilingualNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-YunyangNeural", "zh-CN-YunxiaNeural", "en-US-AvaMultilingualNeural", "en-US-EmmaMultilingualNeural", "en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural"] // addon.json's options, but "custom"
+      if (old && old !== "custom" && !listed.includes(old)) g.settings.set({ azureVoice: "custom", azureVoiceName: old }).catch(() => {});
     }
 
     // Settings: two halves, each behind its switch; a provider's own fields only once it's picked
@@ -1445,7 +1628,6 @@ export default defineAddon({
             <div className="space-y-2.5 border-l-2 border-border pl-2.5">
               <Field name="doubaoKey" />
               <Field name="doubaoAppId" />
-              <Field name="fixModel" />
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
               <Field name="sendMode" />
@@ -1458,7 +1640,7 @@ export default defineAddon({
               {(values.ttsProvider === "mimo"
                 ? ["mimoKey", "mimoVoice", "mimoStyle", "mimoModel", "mimoBaseURL"]
                 : values.ttsProvider === "azure"
-                  ? ["azureKey", "azureRegion", "azureVoice", "azureRate"]
+                  ? ["azureKey", "azureRegion", "azureVoice", ...(values.azureVoice === "custom" ? ["azureVoiceName"] : []), "azureRate"]
                   : // the key is shared with recognition: shown here only when that half is off
                     [...(values.enableInput === false ? ["doubaoKey", "doubaoAppId"] : []), "doubaoVoice", "doubaoRate"]
               ).map((k) => (
