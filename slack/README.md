@@ -31,6 +31,14 @@ ctx.events.reply(e, "收到，已建任务 t9");   // 贴回那条私信 / 那�
 
 等价于自己发一个 `slack.send` 事件：`{ kind: "slack.send", data: { channel, threadTs?, text } }`。
 
+只想点个表情（比如办完了，✅ 就够了）：
+
+```ts
+ctx.events.reply(e, "已批", { react: "white_check_mark", ts: e.data.ts });
+```
+
+插件在 `ts` 那条消息上加这个表情，不发文字；加不上（bot 没有 `reactions:write`、消息删了）才把文字照常发出去，所以文字照样要给。
+
 ## 面板里怎么接
 
 `triggers/slack.json`：
@@ -63,7 +71,7 @@ features:
   bot_user: { display_name: gerdr, always_online: true }
 oauth_config:
   scopes:
-    bot: [chat:write, im:history, im:read, im:write, app_mentions:read, channels:history, groups:history, files:read, users:read]
+    bot: [chat:write, reactions:write, im:history, im:read, im:write, app_mentions:read, channels:history, groups:history, files:read, users:read]
 settings:
   event_subscriptions:
     bot_events: [message.im, app_mention, message.channels, message.groups]
@@ -76,6 +84,7 @@ settings:
 两个都填进 Gerdr 设置 → 插件 → Slack。你自己的 member ID（个人资料 → More → Copy member ID）填进「只收这些人的消息」。
 
 - `channels:history` / `groups:history` 和对应的事件只在打开「频道里不 @ 也收」时有用，不要可以去掉。
+- `reactions:write` 是给消息点表情用的（见「回复」），不要可以去掉，那时只会发文字。
 - `files:read` 是收附件用的；`users:read` 让事件里显示名字而不是 ID。
 - 改了 scope 要 Reinstall to Workspace。
 

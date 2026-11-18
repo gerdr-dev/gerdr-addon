@@ -387,9 +387,21 @@ async function download(ev) {
 // ---- events → Slack ----
 
 // { kind: "slack-me.send", data: { channel, threadTs?, text } }: posted as you, by slackctl
+// { ..., data: { channel, ts, react } }: an emoji reaction ("white_check_mark") on message ts instead, as you; the
+// text is posted only when the reaction can't be added
 async function onGerdrEvent(e) {
   if (e.kind !== "slack-me.send") return;
   const d = e.data ?? {};
+  if (d.react && d.channel && d.ts) {
+    const args = ["message", "react", "add", String(d.channel), String(d.ts), String(d.react)];
+    if (ws_) args.unshift("--workspace", ws_.url);
+    try {
+      return void (await slackctl(args));
+    } catch (err) {
+      if (/already_reacted/.test(err.message)) return;
+      log("react failed, posting the text", err.message);
+    }
+  }
   if (!d.channel || !d.text) return log("slack-me.send without channel / text, from", e.source);
   const args = ["message", "send", String(d.channel), String(d.text)];
   if (d.threadTs) args.push("--thread-ts", String(d.threadTs));

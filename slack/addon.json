@@ -1,6 +1,6 @@
 {
   "name": "Slack",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "收发给你的 Slack bot 的私信和 @ 它的消息，变成 Gerdr 事件；回复以 bot 的身份发出。要在 Slack 后台建一个 app。适合当给 agent 下命令的入口。",
   "icon": "icon.svg",
   "service": {

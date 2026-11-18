@@ -242,9 +242,19 @@ async function download(ev) {
 // ---- events → Slack ----
 
 // A panel answering: { kind: "slack.send", data: { channel, threadTs?, text } }
+// or reacting to a message instead: { data: { channel, ts, react } } (an emoji name, "white_check_mark"; needs reactions:write)
 async function onGerdrEvent(e) {
   if (e.kind !== "slack.send") return;
   const d = e.data ?? {};
+  if (d.react && d.channel && d.ts) {
+    try {
+      return void (await api("reactions.add", { channel: d.channel, timestamp: String(d.ts), name: String(d.react) }));
+    } catch (err) {
+      // Already there: done. Otherwise (no reactions:write…) the text goes as usual
+      if (/already_reacted/.test(err.message)) return;
+      log("react failed, posting the text", err.message);
+    }
+  }
   if (!d.channel || !d.text) {
     log("slack.send without channel / text, from", e.source);
     return;

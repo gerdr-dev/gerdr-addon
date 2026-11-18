@@ -42,6 +42,8 @@ ctx.events.reply(e, "收到，晚点看");   // 以你本人的身份贴回那�
 
 等价于发一个 `slack-me.send` 事件：`{ kind: "slack-me.send", data: { channel, threadTs?, text } }`，插件用 `slackctl message send` 发出去。
 
+只想点个表情：`ctx.events.reply(e, "已批", { react: "white_check_mark", ts: e.data.ts })`，插件用 `slackctl message react add` 以你的身份在 `ts` 那条消息上加表情，不发文字；加不上才把文字照常发出去。
+
 ## 怎么做到的
 
 收消息是 `slackctl listen --mentions-or-dms --include-bots=false`：slackctl 用同一份登录连 Slack 的实时连接（`rtm.connect`，桌面版用的那个），
