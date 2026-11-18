@@ -1188,9 +1188,16 @@ export default defineAddon({
       ) : (
         <I.Mic className={g.ui.cn("size-4", s.recording && "text-bad")} />
       );
-      // The button's padding is part of the hold area (negative margins), so the whole button takes the press
+      // The button's padding is part of the hold area (negative margins), so the whole button takes the press. On a
+      // touch screen the press area reaches further than the button looks (a ::before is hit-tested as the span):
+      // up into the field's bottom padding and down past the composer's edge, where a thumb lands short of a 16px
+      // icon; sideways only into the 4px gaps, so 📎 and the rest keep their own presses
       return (
-        <span ref={self} {...holdProps(ctx)} className="-mx-1.5 -my-1 flex items-center px-1.5 py-1">
+        <span
+          ref={self}
+          {...holdProps(ctx)}
+          className="relative -mx-1.5 -my-1 flex items-center px-1.5 py-1 pointer-coarse:before:absolute pointer-coarse:before:-inset-x-0.5 pointer-coarse:before:-top-2 pointer-coarse:before:-bottom-4"
+        >
           {icon}
         </span>
       );
@@ -1389,8 +1396,11 @@ export default defineAddon({
     /** The composer box's place on screen, measured every frame while shown: it grows with its text, moves with the keyboard. */
     function useBoxRect(el: HTMLElement | null, on: boolean) {
       const [r, setR] = useState<{ left: number; width: number; bottom: number } | null>(null);
-      useEffect(() => {
-        if (!el || !on) return;
+      // Measured in a layout effect, before the browser paints: with useEffect the bubble's first frame used the rect
+      // from the last time it showed (the composer was three lines taller then), and it dropped into place a frame
+      // later. Forgotten when hidden, so nothing stale is around for the next time
+      g.React.useLayoutEffect(() => {
+        if (!el || !on) return setR(null);
         let raf = 0;
         const tick = () => {
           const b = el.getBoundingClientRect();
@@ -1458,6 +1468,24 @@ export default defineAddon({
       return <canvas ref={cv} className={g.ui.cn("block h-4 min-w-0 flex-1", muted ? "text-muted-foreground/50" : "text-bad")} />;
     }
 
+    // The recording bubble's border, breathing red. animate-pulse only dims to 50%, which over a thin red line barely
+    // read; this goes nearly out and back. Web Animations, started once on mount: no keyframes to
+    // register with the in-browser Tailwind, and the bubble re-rendering every second doesn't restart it
+    function RecBorder() {
+      const el = g.React.useRef<HTMLSpanElement | null>(null);
+      g.React.useEffect(() => {
+        const a = el.current?.animate(
+          [
+            { opacity: 1 },
+            { opacity: 0.24 },
+          ],
+          { duration: 900, direction: "alternate", iterations: Infinity, easing: "ease-in-out" },
+        );
+        return () => a?.cancel();
+      }, []);
+      return <span ref={el} className="pointer-events-none absolute -inset-px rounded-2xl border border-bad" />;
+    }
+
     function Bar() {
       const s = useSt();
       const anchor = useBoxRect(s.anchorEl, !!(s.recording || s.busy || s.note));
@@ -1471,7 +1499,8 @@ export default defineAddon({
         return (
           <div
             className={g.ui.cn(
-              "pointer-events-none fixed z-50 rounded-2xl border bg-background p-3 text-sm shadow-xl",
+              // Same box as the recording bubble (px-3 py-2): this one takes its place, and a taller one read as a jump
+              "pointer-events-none fixed z-50 rounded-2xl border border-border/60 bg-background px-3 py-2 text-sm shadow-xl",
               !anchor && "bottom-32 left-1/2 w-[min(92vw,28rem)] -translate-x-1/2",
               s.note.bad ? "text-bad" : "text-muted-foreground",
             )}
@@ -1491,15 +1520,20 @@ export default defineAddon({
         return (
           <div
             className={g.ui.cn(
-              "pointer-events-none fixed z-50 rounded-2xl border bg-background px-3 py-2 shadow-xl",
+              "pointer-events-none fixed z-50 rounded-2xl border border-border/60 bg-background px-3 py-2 shadow-xl",
               !anchor && "bottom-32 left-1/2 w-[min(92vw,28rem)] -translate-x-1/2",
             )}
             style={anchor ? { left: anchor.left, width: anchor.width, bottom: anchor.bottom } : undefined}
           >
+            {/* While recording the border breathes red over the grey one (a layer of its own, so only the border
+                pulses, not the words); it goes grey again while the finger is on "cancel" */}
+            {s.recording && s.swipe !== "cancel" && (
+              <RecBorder />
+            )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               {s.recording ? (
                 <>
-                  <span className={g.ui.cn("size-2 rounded-full", s.swipe === "cancel" ? "bg-muted-foreground" : "animate-pulse bg-bad")} />
+                  <span className={g.ui.cn("size-2 rounded-full", s.swipe === "cancel" ? "bg-muted-foreground" : "bg-bad")} />
                   <span className="tabular-nums">
                     {Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")}
                   </span>
