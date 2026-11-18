@@ -1,6 +1,6 @@
 {
   "name": "语音",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点喇叭听回复，长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
@@ -10,7 +10,7 @@
       "title": "语音输入",
       "type": "boolean",
       "default": true,
-      "description": "📎 右边的 🎤：按住说话，松手放进输入框，上滑取消，右滑发送。"
+      "description": "📎 右边的 🎤：按住说话，松手发送，上滑取消，右滑放进输入框编辑。"
     },
     {
       "key": "doubaoKey",
@@ -53,24 +53,6 @@
       "type": "text",
       "default": "Claude\nCodex\nagent\nGerdr\nMCP\nskill\nprompt\nsession\nadd-on\ncommit\nPR",
       "description": "一行一个，常说又容易认错的词：产品名、人名、术语。每次识别连同这段对话里出现过的英文词一起当提示。"
-    },
-    {
-      "key": "sendMode",
-      "title": "识别完",
-      "type": "select",
-      "default": "insert",
-      "required": true,
-      "options": [
-        {
-          "value": "insert",
-          "label": "放进输入框，我看一眼再发"
-        },
-        {
-          "value": "send",
-          "label": "直接发"
-        }
-      ],
-      "description": "右滑松手总是直接发。"
     },
     {
       "key": "enableOutput",
@@ -402,14 +384,6 @@
           "title": "My words",
           "description": "One per line: words you say often that get misheard (product names, people, terms). Sent as hints with the English words from this conversation."
         },
-        "sendMode": {
-          "title": "After transcribing",
-          "options": {
-            "insert": "Put it in the composer, I send it",
-            "send": "Send it"
-          },
-          "description": "Swiping right before letting go always sends."
-        },
         "playMode": {
           "title": "Hands-free",
           "options": {
@@ -476,7 +450,7 @@
         },
         "enableInput": {
           "title": "Voice input",
-          "description": "The 🎤 right after 📎: hold to talk, let go to put it in the composer, slide up to cancel, right to send."
+          "description": "The 🎤 right after 📎: hold to talk, let go to send, slide up to cancel, right to edit it in the composer first."
         },
         "enableOutput": {
           "title": "Read aloud",

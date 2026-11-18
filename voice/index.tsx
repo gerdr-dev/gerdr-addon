@@ -5,7 +5,7 @@
 // Input: hold the mic (pinned after the attach button) to talk. The mic's PCM goes to Doubao's streaming
 // recognizer (through g.socket) and the words go into the composer as they're said; each sentence, once settled, can
 // be fixed up by a configured model that reads the conversation (g.llm) and replaced in place, so what's on screen is
-// what gets sent (swipe right: send). Azure recognition was here too and was dropped: its streaming text was rough
+// what gets sent (letting go sends it; swipe right puts it in the composer to edit first). Azure recognition was here too and was dropped: its streaming text was rough
 // enough to need a second pass on release, which replaced what you saw — Doubao re-checks each sentence itself.
 //
 // Output: the speaker beside each message (g.messageAction) reads it, paragraph by paragraph, marking and jumping;
@@ -26,9 +26,9 @@ type State = {
   since: number; // when recording started (ms)
   busy: string | null; // released: waiting for the last sentence (and its fix-up)
   live: { done: string; hyp: string }; // what streaming recognition heard so far: settled phrases, the one in progress
-  // where the finger slid: up = releasing drops the recording, right = releasing sends it (what's in the composer,
-  // once the last sentence is fixed up)
-  swipe: "" | "cancel" | "send";
+  // where the finger slid: up = releasing drops the recording, right = releasing leaves it in the composer to edit;
+  // neither = releasing sends what's in the composer (once the last sentence is fixed up)
+  swipe: "" | "cancel" | "edit";
   // where the press is: "spot" (the middle of the field, under the finger: the field makes room) or the bar's mic
   from: "spot" | "mic";
   // the composer box being talked into (its window position), so the bubble sits right above it; null = centered
@@ -241,7 +241,7 @@ export default defineAddon({
     }
 
     // ---------- recording ----------
-    // Hold the mic to talk, let go to finish (slide up to cancel, right to send). While held, the mic's PCM goes to
+    // Hold the mic to talk, let go to send (slide up to cancel, right to edit it in the composer first). While held, the mic's PCM goes to
     // streaming recognition through g.socket, so the words go into the composer as they're said.
 
     /** A streaming recognizer: takes the PCM as it's recorded, reports what it heard through setLive. */
@@ -296,7 +296,7 @@ export default defineAddon({
 
     // Each sentence the recognizer settles is fixed up right away by the fix-up model (fixModel, optional), while you
     // go on talking, and the fixed copy replaces it in the composer: what you see while holding is what gets sent, not
-    // a draft that changes after you let go (that made "swipe right: send" a blind send). Only the sentence still
+    // a draft that changes after you let go (that made sending on release a blind send). Only the sentence still
     // being said is raw. The model reads the conversation and fixes homophones a recognizer can't tell apart
     // ("对不起" → "对不齐" while talking layout).
     type Seg = { raw: string; fixed: string | null; failed: boolean; job: Promise<void> };
@@ -498,7 +498,10 @@ export default defineAddon({
 
     async function startRecording() {
       if (rec || st.busy) return;
-      g.audio.stop(); // you're talking: whatever was being read stops
+      // You're talking: the reading stops, all of it. g.audio.stop() alone ended only the clip sounding: play() went on
+      // to the reply after its name, ~2s later (synthesis), and on Android that sound took a Bluetooth headset back
+      // from its mic, so the rest of the recording heard nothing
+      stopPlaying();
       const sid = target?.sessionId || activeSession();
       clearTimeout(noteTimer);
       put({ recording: sid || "?", since: Date.now(), live: { done: "", hyp: "" }, swipe: "", note: null });
@@ -580,9 +583,9 @@ export default defineAddon({
       const sid = st.recording;
       const r = rec;
       const cancel = st.swipe === "cancel";
-      const send = st.swipe === "send";
+      const edit = st.swipe === "edit";
       rec = null;
-      put({ recording: null, swipe: send ? "send" : "" }); // kept while it is fixed up: the bubble says it will send
+      put({ recording: null, swipe: edit ? "edit" : "" }); // kept while it is fixed up: the bubble says whether it will send
       if (!r) return;
       clearTimeout(r.cutoff);
       r.node.disconnect();
@@ -628,7 +631,7 @@ export default defineAddon({
         dropLive();
         return note(T("没听清，再说一次？", "Didn't catch that. Again?"));
       }
-      sendTrace(deliver(text, session, to, send));
+      sendTrace(deliver(text, session, to, edit));
       if (took && !st.note) note(took);
     }
 
@@ -667,9 +670,9 @@ export default defineAddon({
       return out && out.length <= heard.length * 1.5 + 20 ? out : heard;
     }
 
-    // The final text replaces what went in live (after what the composer held before the press)
-    function deliver(text: string, session: string, to: ComposerContext | null, send: boolean): string {
-      const mode = g.settings.get<string>("sendMode") || "insert";
+    // The final text replaces what went in live (after what the composer held before the press), and is sent unless
+    // the finger slid right (edit: it stays in the composer)
+    function deliver(text: string, session: string, to: ComposerContext | null, edit: boolean): string {
       if (to && (liveBase === null || touched())) {
         // sent or edited while it was being fixed up: that wins
         const why = liveBase === null ? "skip(base)" : `skip(touched ${to.text.length}/${lastShown?.length})`;
@@ -679,7 +682,7 @@ export default defineAddon({
       if (liveBase === null) liveTail = "";
       const o = around(liveBase ?? to?.text ?? "", text);
       liveBase = lastShown = null;
-      if (send || mode === "send") {
+      if (!edit) {
         g.actions.send(session, o.text).catch(fail);
         to?.setText("");
         return `sent(${text.length})`;
@@ -1114,14 +1117,14 @@ export default defineAddon({
       if (!st.recording) return;
       const dx = x - pressAt.x;
       const dy = pressAt.y - y;
-      const swipe = dy > 60 && dy >= dx ? "cancel" : dx > 60 ? "send" : "";
+      const swipe = dy > 60 && dy >= dx ? "cancel" : dx > 60 ? "edit" : "";
       if (swipe !== st.swipe) put({ swipe });
     }
 
     // The props that make an element a hold-to-talk surface: no scrolling, no text selection or callout, the
     // pointer kept until it lets go (wherever it went)
     const holdProps = (ctx: ComposerContext | undefined) => ({
-      // the phone's pager turns pages on a sideways swipe; this one is ours (swipe right = send)
+      // the phone's pager turns pages on a sideways swipe; this one is ours (swipe right = edit)
       "data-no-swipe": "",
       style: { touchAction: "none", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" } as any,
       onContextMenu: (e: any) => e.preventDefault(),
@@ -1284,7 +1287,7 @@ export default defineAddon({
 
     const micAction = () => g.composerAction({
       id: "mic",
-      title: T("按住说话：松手放进输入框，上滑取消，右滑发送", "Hold to talk: let go to put it in the composer, slide up to cancel, right to send"),
+      title: T("按住说话：松手发送，上滑取消，右滑放进输入框编辑", "Hold to talk: let go to send, slide up to cancel, right to edit it first"),
       place: "start",
       // render gives each composer its own ctx; icon is for a Gerdr without render, where the click's run says
       render: (ctx) => <Mic ctx={ctx} />,
@@ -1494,24 +1497,39 @@ export default defineAddon({
                     {Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")}
                   </span>
                   <Wave muted={s.swipe === "cancel"} />
-                  <span className={g.ui.cn("shrink-0", s.swipe === "cancel" && "font-medium text-bad", s.swipe === "send" && "font-medium text-brand")}>
-                    {s.swipe === "cancel"
-                      ? T("松手取消", "Let go to cancel")
-                      : s.swipe === "send"
-                        ? T("松手发送", "Let go to send")
-                        : T("上滑取消 · 右滑发送", "Up: cancel · right: send")}
+                  {/* Both hints stay put (same words, same weight: nothing shifts as the finger moves); the one the
+                      finger is on lights up and the other fades */}
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span
+                      className={g.ui.cn(
+                        "transition-[color,opacity] duration-150",
+                        s.swipe === "cancel" && "text-bad",
+                        s.swipe === "edit" && "opacity-30",
+                      )}
+                    >
+                      {T("上滑取消", "Up: cancel")}
+                    </span>
+                    <span
+                      className={g.ui.cn(
+                        "transition-[color,opacity] duration-150",
+                        s.swipe === "edit" && "text-brand",
+                        s.swipe === "cancel" && "opacity-30",
+                      )}
+                    >
+                      {T("右滑编辑", "Right: edit")}
+                    </span>
                   </span>
                 </>
               ) : (
                 <>
                   <I.LoaderCircle className="size-3 animate-spin" />
                   {fixing
-                    ? s.swipe === "send"
-                      ? T("最后一句纠错后发送…", "Fixing the last sentence, then sending…")
-                      : T("最后一句纠错中…", "Fixing the last sentence…")
-                    : s.swipe === "send"
-                      ? T("识别完就发送…", "Recognizing, then sending…")
-                      : T("识别中…", "Recognizing…")}
+                    ? s.swipe === "edit"
+                      ? T("最后一句纠错中…", "Fixing the last sentence…")
+                      : T("最后一句纠错后发送…", "Fixing the last sentence, then sending…")
+                    : s.swipe === "edit"
+                      ? T("识别中…", "Recognizing…")
+                      : T("识别完就发送…", "Recognizing, then sending…")}
                 </>
               )}
             </div>
@@ -1630,7 +1648,6 @@ export default defineAddon({
               <Field name="doubaoAppId" />
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
-              <Field name="sendMode" />
             </div>
           )}
           <Field name="enableOutput" />
