@@ -683,8 +683,15 @@ export default defineAddon({
       const o = around(liveBase ?? to?.text ?? "", text);
       liveBase = lastShown = null;
       if (!edit) {
-        g.actions.send(session, o.text).catch(fail);
-        to?.setText("");
+        // Through the composer when there is one, so pasted images and files go along (g.actions.send takes text
+        // only and left them behind). ctx.send is new: an older Gerdr has none.
+        if (to?.send) {
+          to.setText(o.text);
+          to.send().catch(fail);
+        } else {
+          g.actions.send(session, o.text).catch(fail);
+          to?.setText("");
+        }
         return `sent(${text.length})`;
       } else if (to) to.setText(o.text, o.caret);
       else g.actions.insertText(session, text);

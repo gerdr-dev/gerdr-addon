@@ -19,6 +19,10 @@
 //                icon (a string: picked from the same icons as an agent's — gerdr's glyphs, line icons, sprites other
 //                add-ons brought; "default" is usually a lucide name, {"key": "on", "type": "icon", "default": "Coffee"};
 //                draw the value with <g.ui.Icon icon={…} />)
+//                The types stop here, on purpose. Anything the generated form can't do is laid out by you in
+//                g.slot("settings") from these: fields shown only once a provider is picked, a line of help, and "pick
+//                one or type your own" = a select with a "custom" option plus a string drawn only while it's picked
+//                (<Field> for both; the voice add-on's Azure voice). Don't wait for gerdr to grow a new type.
 //   index.ts     the UI half (or what "main" names): export default defineAddon({...}). It may import other files of
 //                the folder; images, sounds and other files it ships are reached with g.asset("icon.png").
 //
@@ -643,6 +647,11 @@ declare global {
     insert(text: string): void;
     /** Replace what is typed; caret: where to put the caret in the new text (default: wherever the browser leaves it, the end). */
     setText(text: string, caret?: number): void;
+    /**
+     * Send what is in the composer, attached images and files included, as pressing Enter does (g.actions.send takes
+     * text only). A setText just before it is what goes. With no composer on screen, only the text is sent.
+     */
+    send(): Promise<void>;
   }
 
   interface MenuContext {
