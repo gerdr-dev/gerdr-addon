@@ -11,6 +11,15 @@
 # HANDOVER seconds (the new copy writes its own pid into $OWNER). Quitting Gerdr for good during a stretch therefore
 # keeps the Mac awake for at most that long.
 #
+# disablesleep is one switch shared with Gerdr's own lid mode (Settings → Labs) and anything else: each one turning it
+# off when its own stretch ended switched it off under the others (Gerdr's remote stretch ending at night put the Mac to
+# sleep while this was on). So every holder writes a file, $GERDR_DIR/run/disablesleep/<name>, holding a pid alive as
+# long as the hold, and turns the switch off only when no other holder's pid is alive (GUIDE.md "Shared machine
+# switches").
+#
+# Letting go on a low battery with the lid already closed also runs `pmset sleepnow`: turning disablesleep off does not
+# sleep a closed Mac (clamshell sleep fires only when the lid closes), and idle sleep once took 50 minutes, 20% → 9%.
+#
 # Talks to Gerdr in JSON lines (GUIDE.md "Services"): reads hello / settings / message, writes status / message.
 
 set -u
@@ -21,6 +30,9 @@ OWNER="$DATA/owner" # this copy's pid while it holds disablesleep; "handover <pi
 PMSET=${LID_AWAKE_PMSET:-/usr/bin/pmset} # overridable only for testing the script
 SUDO=${LID_AWAKE_SUDO:-/usr/bin/sudo}
 RULE=/etc/sudoers.d/gerdr_lid_awake
+HOLDERS=${LID_AWAKE_HOLDERS:-${GERDR_DIR:-$HOME/.gerdr}/run/disablesleep}
+HOLDER="$HOLDERS/lid-awake"
+IOREG=${LID_AWAKE_IOREG:-/usr/sbin/ioreg}
 HANDOVER=${LID_AWAKE_HANDOVER:-120}
 TICK=${LID_AWAKE_TICK:-30}
 LOW=20      # battery percent at or under which it lets go (setting lowBattery); 0 = never
@@ -33,6 +45,39 @@ esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 ready() { $SUDO -n -l $PMSET -a disablesleep 1 >/dev/null 2>&1; }
 set_ds() { $SUDO -n $PMSET -a disablesleep "$1" >/dev/null 2>&1; }
+log() { echo "$(date '+%F %T') $*" >&2; }
+
+# hold PID: record PID as this add-on's hold on disablesleep.
+hold() { mkdir -p "$HOLDERS" && echo "$1" >"$HOLDER"; }
+
+# others_hold: another holder's pid is alive (dead or junk files are removed on the way).
+others_hold() {
+  local f p
+  for f in "$HOLDERS"/*; do
+    [ -f "$f" ] || continue
+    [ "$f" = "$HOLDER" ] && continue
+    p=$(cat "$f" 2>/dev/null)
+    case "$p" in '' | *[!0-9]*) rm -f "$f"; continue ;; esac
+    if kill -0 "$p" 2>/dev/null || ps -p "$p" >/dev/null 2>&1; then return 0; fi
+    rm -f "$f"
+  done
+  return 1
+}
+
+# release: drop this add-on's hold; turn disablesleep off unless someone else holds it.
+# OFF=1 when it did turn the switch off.
+release() {
+  OFF=0
+  rm -f "$HOLDER"
+  if others_hold; then
+    log "let go; another holder keeps disablesleep on"
+    return 0
+  fi
+  set_ds 0 && OFF=1
+}
+
+lid_closed() { $IOREG -r -k AppleClamshellState -d 1 2>/dev/null | grep -q '"AppleClamshellState" = Yes'; }
+
 ds_now() { $PMSET -g | awk '/SleepDisabled/ { print $2; exit }'; }
 
 # Battery: PCT (-1 = no battery), BATT (1 = running on it).
@@ -61,11 +106,24 @@ apply() {
       ERR=$(say "pmset 没能打开 disablesleep" "pmset could not turn disablesleep on")
       return
     fi
+    [ "$(cat "$OWNER" 2>/dev/null)" = "$$" ] || log "holding disablesleep (battery ${PCT}%)"
     echo "$$" >"$OWNER"
+    hold "$$"
   else
     ERR=""
     if [ -e "$OWNER" ]; then
-      set_ds 0 && rm -f "$OWNER"
+      if release; then
+        rm -f "$OWNER"
+        if [ "$IS_LOW" = 1 ]; then
+          log "battery ${PCT}%: let go"
+          if [ "$OFF" = 1 ] && lid_closed; then
+            log "lid closed: sleeping now"
+            $PMSET sleepnow >/dev/null 2>&1
+          fi
+        else
+          log "let go"
+        fi
+      fi
     fi
   fi
 }
@@ -112,10 +170,12 @@ handover() {
   local tag="handover $$"
   echo "$tag" >"$OWNER"
   # Detached from Gerdr's pipes (it waits for stdout to close) and deaf to the signals a stopping parent sends
+  # The timer holds in our place (its own pid in the holder file) until the next copy takes over or it runs out.
   (
     trap '' HUP TERM INT
+    hold "$(exec /bin/sh -c 'echo $PPID')"
     sleep "$HANDOVER"
-    [ "$(cat "$OWNER" 2>/dev/null)" = "$tag" ] && set_ds 0 && rm -f "$OWNER"
+    [ "$(cat "$OWNER" 2>/dev/null)" = "$tag" ] && release && rm -f "$OWNER"
   ) </dev/null >/dev/null 2>&1 &
   exit 0
 }

@@ -16,5 +16,6 @@ Gerdr updates and restarts itself when idle, and this background process restart
 ## Notes
 
 - macOS only.
-- disablesleep is one switch for the whole computer. Turning the mode off here only undoes what this add-on turned on; it leaves anyone else's (Gerdr Labs, Amphetamine) alone. While the mode is on here, it checks every 30 seconds and turns disablesleep back on if something else turned it off.
+- disablesleep is one switch for the whole computer. While on, this add-on leaves a holder record in `~/.gerdr/run/disablesleep/`, and so does Gerdr's own lid mode (Labs); whoever lets go only turns the switch off when nobody else still holds it, so the two no longer switch each other off. While the mode is on here, it checks every 30 seconds and turns disablesleep back on if something else (Amphetamine, say) turned it off.
+- Letting go on a low battery with the lid closed puts the Mac to sleep right away (`pmset sleepnow`): turning disablesleep off alone doesn't sleep a closed Mac until idle sleep gets to it, which once took 50 minutes, 20% down to 9%.
 - A closed laptop in a bag gets hot and drains its battery, which is why the low-battery line exists.
