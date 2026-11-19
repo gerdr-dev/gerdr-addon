@@ -7,6 +7,8 @@
 // be fixed up by a configured model that reads the conversation (g.llm) and replaced in place, so what's on screen is
 // what gets sent (letting go sends it; swipe right puts it in the composer to edit first). Azure recognition was here too and was dropped: its streaming text was rough
 // enough to need a second pass on release, which replaced what you saw — Doubao re-checks each sentence itself.
+// Or recognition through an OpenAI-compatible /audio/transcriptions (SiliconFlow, OpenAI, a local whisper…): it takes
+// whole files, so the recording is cut at each pause and each piece sent as it ends (oaLive).
 //
 // Output: the speaker beside each message (g.messageAction) reads it, paragraph by paragraph, marking and jumping;
 // 🔊 by the composer reads the conversation's latest reply now (tap) or turns auto read on (hold, per device): each finished
@@ -189,6 +191,38 @@ function chime() {
   }
 }
 
+/** 16 kHz mono 16-bit PCM as a WAV file: what every /audio/transcriptions takes. */
+function wav(pcm: Int16Array) {
+  const out = new Uint8Array(44 + pcm.length * 2);
+  const v = new DataView(out.buffer);
+  const tag = (at: number, s: string) => [...s].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  tag(0, "RIFF");
+  v.setUint32(4, 36 + pcm.length * 2, true);
+  tag(8, "WAVE");
+  tag(12, "fmt ");
+  v.setUint32(16, 16, true); // the fmt chunk's size
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, 16000, true); // samples per second
+  v.setUint32(28, 32000, true); // bytes per second
+  v.setUint16(32, 2, true); // bytes per sample
+  v.setUint16(34, 16, true); // bits per sample
+  tag(36, "data");
+  v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) v.setInt16(44 + i * 2, pcm[i], true);
+  return out;
+}
+
+/** A chunk's loudness in dBFS (RMS): about -120 for silence, 0 at full scale. */
+function dbfs(pcm: Int16Array): number {
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+  return 20 * Math.log10(Math.sqrt(sum / Math.max(1, pcm.length)) / 32768 || 1e-6);
+}
+
+/** Two pieces of recognized text, in order: a space between Latin words, none between Chinese sentences. */
+const glue = (a: string, b: string) => (a && b && /[A-Za-z0-9,.;:!?)]$/.test(a) && /^[A-Za-z0-9(]/.test(b) ? `${a} ${b}` : a + b);
+
 export default defineAddon({
   setup(g) {
     zh.v = g.locale() === "zh";
@@ -240,6 +274,47 @@ export default defineAddon({
       return terms(texts);
     }
 
+    // ---------- OpenAI-compatible speech: SiliconFlow, OpenAI, and any service with the same API ----------
+    // /audio/transcriptions (multipart: file + model) and /audio/speech (JSON: model, input, voice) are the shape most
+    // vendors and local servers speak. A preset fills in the address and models, so picking SiliconFlow and pasting the
+    // key is enough; each can be overridden (a proxy, SiliconFlow's international site, another model).
+    type Preset = { name: string; base: string; asr: string; tts: string; voice: string; prompt: boolean };
+    const PRESETS: Record<string, Preset> = {
+      // SenseVoice documents only file + model: no prompt is sent there
+      siliconflow: { name: T("硅基流动", "SiliconFlow"), base: "https://api.siliconflow.cn/v1", asr: "FunAudioLLM/SenseVoiceSmall", tts: "FunAudioLLM/CosyVoice2-0.5B", voice: "anna", prompt: false },
+      openai: { name: "OpenAI", base: "https://api.openai.com/v1", asr: "gpt-4o-mini-transcribe", tts: "gpt-4o-mini-tts", voice: "coral", prompt: true },
+      // The names most compatible servers know (Groq, a local whisper / Kokoro server…); prompt is part of the API
+      custom: { name: T("语音服务", "Speech service"), base: "", asr: "whisper-1", tts: "tts-1", voice: "alloy", prompt: true },
+    };
+    const asrOa = () => g.settings.get<string>("asrProvider") === "openai";
+    /** The picked preset with what's set over it; throws, saying what to fill in, when it can't be used yet. */
+    const oaConf = () => {
+      const id = g.settings.get<string>("oaPreset") || "siliconflow";
+      const p = PRESETS[id] ?? PRESETS.siliconflow;
+      const base = (g.settings.get<string>("oaBaseURL")?.trim() || p.base).replace(/\/+$/, "");
+      const key = g.settings.get<string>("oaKey")?.trim() ?? "";
+      if (!base) throw new Error(T(`先在 ${where} 里填语音服务的接口地址`, `Set the speech service's address in ${where}`));
+      // A local server may want no key; a vendor always does
+      if (!key && id !== "custom") throw new Error(T(`先在 ${where} 里填${p.name}的 API Key`, `Set the ${p.name} API key in ${where}`));
+      return {
+        ...p,
+        id,
+        base,
+        auth: (key ? { Authorization: `Bearer ${key}` } : {}) as Record<string, string>,
+        asr: g.settings.get<string>("oaAsrModel")?.trim() || p.asr,
+        tts: g.settings.get<string>("oaTtsModel")?.trim() || p.tts,
+      };
+    };
+    /** An error answer's message: {error: {message}}, {message}, or the text itself. */
+    const why = (text: string) => {
+      try {
+        const o = JSON.parse(text);
+        return String(o?.error?.message ?? o?.message ?? o?.error ?? text).slice(0, 200);
+      } catch {
+        return text.slice(0, 200);
+      }
+    };
+
     // ---------- recording ----------
     // Hold the mic to talk, let go to send (slide up to cancel, right to edit it in the composer first). While held, the mic's PCM goes to
     // streaming recognition through g.socket, so the words go into the composer as they're said.
@@ -260,6 +335,13 @@ export default defineAddon({
       cutoff: ReturnType<typeof setTimeout>;
     };
     let rec: Rec | null = null;
+    // Why recognition failed in this recording, said again when it ends: a note shown while you talk is gone by the
+    // time you let go, and "didn't catch that" hid a wrong key
+    let asrErr = "";
+    const asrFail = (e: unknown) => {
+      asrErr ||= e instanceof Error ? e.message : String(e);
+      note(asrErr, true);
+    };
     /** The composer that gets the text: set when the mic is pressed (its composer's ctx). */
     let target: ComposerContext | null = null;
     // What the composer held before the caret when the press began: the words go in live after it, as said (like a
@@ -412,7 +494,7 @@ export default defineAddon({
           const code = v.getUint32(4);
           const msg = new TextDecoder().decode(new Uint8Array(e.data, 12, v.getUint32(8)));
           mark(`err(${code} ${msg.slice(0, 80)})`);
-          note(`${T("豆包", "Doubao")} ${code}: ${msg}`, true);
+          asrFail(`${T("豆包", "Doubao")} ${code}: ${msg}`);
           return r.finish();
         }
         if (type !== 0b1001) return;
@@ -456,6 +538,100 @@ export default defineAddon({
         },
         end: () => flush(true),
         close: () => sock.close(),
+      };
+    }
+
+    /** One piece of a recording to text, through /audio/transcriptions. */
+    async function oaTranscribe(pcm: Int16Array, hints: string[]): Promise<string> {
+      const c = oaConf();
+      const form = new FormData();
+      form.append("model", c.asr);
+      // A prompt steers whisper-like models to these spellings, and for Chinese to simplified characters with punctuation
+      if (c.prompt && hints.length) form.append("prompt", T("以下是普通话，会说到：", "Vocabulary: ") + hints.join(", "));
+      form.append("file", new Blob([wav(pcm)], { type: "audio/wav" }), "speech.wav");
+      // The browser writes the multipart body and its boundary; g.fetch sends those bytes as they are
+      const req = new Response(form);
+      const r = await g.fetch(`${c.base}/audio/transcriptions`, {
+        method: "POST",
+        headers: { ...c.auth, "Content-Type": req.headers.get("content-type") ?? "multipart/form-data" },
+        body: new Uint8Array(await req.arrayBuffer()),
+      });
+      if (!r.ok) throw new Error(`${c.name} ${r.status}: ${why(r.text)}`);
+      let text = r.text;
+      try {
+        text = r.json()?.text ?? "";
+      } catch {
+        // a server answering in plain text
+      }
+      return text.replace(/<\|[^|]*\|>/g, "").trim(); // SenseVoice's language / emotion tags, should any come through
+    }
+
+    /**
+     * Recognition through /audio/transcriptions. It takes a file, not a stream, so the recording is cut at each pause
+     * and each piece is sent as it ends: the words still come in while you talk, a pause behind, and every request
+     * stays small and quick. Pieces are out at the same time and are put back in order.
+     */
+    const RATE = 16000;
+    const SPEECH_DB = -50; // louder than this is speech (the mic has noise suppression and gain control on)
+    function oaLive(r: Rec, hints: string[]): Live {
+      const words = (g.settings.get<string>("words") ?? "").split("\n").map((w) => w.trim()).filter(Boolean);
+      const prompt = [...new Set([...words, ...hints])].slice(0, 40);
+      let cur: Int16Array[] = [];
+      let len = 0; // samples in the piece being recorded
+      let voiced = 0; // of those, loud enough to be speech
+      let quiet = 0; // silence since the last speech
+      let closed = false;
+      const texts: (string | null)[] = []; // each piece's text, in order; null while it's out
+      const jobs: Promise<void>[] = [];
+      const show = () => {
+        if (closed) return;
+        let done = "";
+        for (const t of texts) {
+          if (t === null) break; // what comes after waits for it
+          done = glue(done, t);
+        }
+        setLive(r, done, "");
+      };
+      const send = () => {
+        const all = new Int16Array(len);
+        let at = 0;
+        for (const c of cur) {
+          all.set(c, at);
+          at += c.length;
+        }
+        [cur, len, voiced, quiet] = [[], 0, 0, 0];
+        const i = texts.push(null) - 1;
+        mark(`piece${i}(${(all.length / RATE).toFixed(1)}s)`);
+        const job = oaTranscribe(all, prompt).then(
+          (t) => void (texts[i] = t),
+          (e) => {
+            texts[i] = "";
+            mark(`fail${i}`);
+            asrFail(e);
+          },
+        );
+        jobs.push(job.then(show));
+      };
+      return {
+        push: (pcm) => {
+          cur.push(pcm);
+          len += pcm.length;
+          if (dbfs(pcm) > SPEECH_DB) [voiced, quiet] = [voiced + pcm.length, 0];
+          else quiet += pcm.length;
+          // A pause after some speech ends a piece; one that goes on and on is cut anyway. Long silence is dropped
+          // once a piece has shown the mic is loud enough to tell (whisper-like models make words up from silence)
+          if (voiced > 0.3 * RATE && quiet > 0.6 * RATE) send();
+          else if (len > 25 * RATE) {
+            if (voiced || !texts.length) send();
+            else [cur, len, quiet] = [[], 0, 0];
+          }
+        },
+        end: () => {
+          // What's left, unless it's only the silence after the last piece (a recording never loud enough is sent whole)
+          if (len && (voiced > 0 || !texts.length)) send();
+          Promise.all(jobs).then(() => r.finish());
+        },
+        close: () => void (closed = true),
       };
     }
 
@@ -507,6 +683,7 @@ export default defineAddon({
       put({ recording: sid || "?", since: Date.now(), live: { done: "", hyp: "" }, swipe: "", note: null });
       segs = [];
       segSession = sid;
+      asrErr = "";
       tr = { t0: performance.now(), ev: ["press@0"] };
       // What the recognizer is told about the conversation needs a round trip or two (slow over the remote link):
       // started now, alongside the mic, not after it. The socket used to open only once both were done, and a short
@@ -515,7 +692,17 @@ export default defineAddon({
       context.catch(() => {});
       try {
         // a missing key says so now, not after you've talked
-        if (!g.settings.get<string>("doubaoKey")?.trim()) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
+        if (asrOa()) oaConf();
+        else if (!g.settings.get<string>("doubaoKey")?.trim()) throw new Error(T(`先在 ${where} 里填豆包的 Key`, `Set the Doubao key in ${where}`));
+        // A page that isn't a secure context has no navigator.mediaDevices at all (the desktop App before it treated
+        // http://gerdr as secure, Gerdr opened over plain http on the LAN): say why, not "Cannot read properties…"
+        if (!navigator.mediaDevices?.getUserMedia)
+          throw new Error(
+            T(
+              "这个页面用不了麦克风（不是安全页面）：桌面 App 升级到新版，或用 https 地址 / 手机打开 Gerdr",
+              "No microphone on this page (not a secure context): update the desktop App, or open Gerdr over https / on a phone",
+            ),
+          );
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
@@ -541,7 +728,7 @@ export default defineAddon({
         node.connect(ctx.destination); // a ScriptProcessor only runs while connected; it outputs silence
         openLive(r, context).catch((e) => {
           mark(`fail(${e instanceof Error ? e.message : String(e)})`);
-          noteFail(e);
+          asrFail(e);
           r.finish();
         });
       } catch (e) {
@@ -571,7 +758,7 @@ export default defineAddon({
     async function openLive(r: Rec, context: Promise<{ hints: string[]; dialog: string[] }>) {
       const { hints, dialog } = await context;
       mark("ctx");
-      const live = await doubaoLive(r, hints, dialog);
+      const live = asrOa() ? oaLive(r, hints) : await doubaoLive(r, hints, dialog);
       if (rec !== r && !r.ending) return live.close(); // cancelled meanwhile
       r.live = live;
       for (const c of r.buf) live.push(c);
@@ -629,10 +816,11 @@ export default defineAddon({
       if (!text) {
         sendTrace("empty");
         dropLive();
-        return note(T("没听清，再说一次？", "Didn't catch that. Again?"));
+        return note(asrErr || T("没听清，再说一次？", "Didn't catch that. Again?"), !!asrErr);
       }
       sendTrace(deliver(text, session, to, edit));
-      if (took && !st.note) note(took);
+      if (asrErr) note(T(`有一段没识别出来：${asrErr}`, `A part wasn't recognized: ${asrErr}`), true);
+      else if (took && !st.note) note(took);
     }
 
     /**
@@ -820,10 +1008,33 @@ export default defineAddon({
       return new Blob([r.bytes() as Uint8Array<ArrayBuffer>], { type: "audio/mpeg" });
     };
 
+    /** /audio/speech: SiliconFlow's CosyVoice, OpenAI's voices, or any compatible server. */
+    const oaSpeech = async (text: string): Promise<Blob> => {
+      const c = oaConf();
+      const own = g.settings.get<string>("oaVoice")?.trim();
+      const picked = g.settings.get<string>("sfVoice") || c.voice;
+      // SiliconFlow names a preset voice after its model ("FunAudioLLM/CosyVoice2-0.5B:anna"), so the pick follows a
+      // model change; "custom" is a whole name of your own (an uploaded voice's speech:…)
+      const voice = c.id === "siliconflow" ? (picked === "custom" ? own : `${c.tts}:${picked}`) : own || c.voice;
+      if (!voice) throw new Error(T(`先在 ${where} 里填音色名`, `Set the voice name in ${where}`));
+      const rate = g.settings.get<number>("oaRate") ?? 0;
+      const r = await g.fetch(`${c.base}/audio/speech`, {
+        method: "POST",
+        headers: c.auth,
+        // Only fields every compatible API takes: some (OpenAI) refuse one they don't know
+        body: { model: c.tts, input: text, voice, response_format: "mp3", ...(rate ? { speed: Math.min(4, Math.max(0.25, 1 + rate / 100)) } : {}) },
+        binary: true,
+      });
+      const bytes = r.bytes();
+      // An error is JSON, not audio — also from a proxy that answers it with 200
+      if (!r.ok || bytes[0] === 0x7b) throw new Error(`${c.name} ${r.status}: ${why(new TextDecoder().decode(bytes))}`);
+      return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "audio/mpeg" });
+    };
+
     // Read the provider at each piece, so switching it in settings applies to the next read without a reload
     const say = (text: string) => {
       const p = g.settings.get<string>("ttsProvider") || "doubao";
-      return p === "mimo" ? mimo(text) : p === "azure" ? azure(text) : doubao(text);
+      return p === "mimo" ? mimo(text) : p === "azure" ? azure(text) : p === "openai" ? oaSpeech(text) : doubao(text);
     };
 
     // Synthesis runs one piece after another, up to AHEAD pieces past the one playing, without waiting for g.audio to
@@ -1680,13 +1891,22 @@ export default defineAddon({
 
     // Settings: two halves, each behind its switch; a provider's own fields only once it's picked
     const offSettings = g.slot("settings", ({ Field, values, set }) => {
+      // A key used by both halves is shown once: in the input half when recognition uses it, else in the reading half
+      const listening = values.enableInput !== false;
+      const oaInInput = listening && values.asrProvider === "openai";
+      const doubaoInInput = listening && values.asrProvider !== "openai";
+      const oaConn = ["oaPreset", "oaKey", "oaBaseURL"];
+      const oaVoiceFields =
+        values.oaPreset === "openai" || values.oaPreset === "custom" ? ["oaVoice"] : ["sfVoice", ...(values.sfVoice === "custom" ? ["oaVoice"] : [])];
       return (
         <div className="space-y-2.5">
           <Field name="enableInput" />
-          {values.enableInput !== false && (
+          {listening && (
             <div className="space-y-2.5 border-l-2 border-border pl-2.5">
-              <Field name="doubaoKey" />
-              <Field name="doubaoAppId" />
+              <Field name="asrProvider" />
+              {(oaInInput ? [...oaConn, "oaAsrModel"] : ["doubaoKey", "doubaoAppId"]).map((k) => (
+                <Field key={k} name={k} />
+              ))}
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
             </div>
@@ -1699,8 +1919,10 @@ export default defineAddon({
                 ? ["mimoKey", "mimoVoice", "mimoStyle", "mimoModel", "mimoBaseURL"]
                 : values.ttsProvider === "azure"
                   ? ["azureKey", "azureRegion", "azureVoice", ...(values.azureVoice === "custom" ? ["azureVoiceName"] : []), "azureRate"]
-                  : // the key is shared with recognition: shown here only when that half is off
-                    [...(values.enableInput === false ? ["doubaoKey", "doubaoAppId"] : []), "doubaoVoice", "doubaoRate"]
+                  : values.ttsProvider === "openai"
+                    ? [...(oaInInput ? [] : oaConn), "oaTtsModel", ...oaVoiceFields, "oaRate"]
+                    : // the key is shared with recognition: shown here only when recognition doesn't show it
+                      [...(doubaoInInput ? [] : ["doubaoKey", "doubaoAppId"]), "doubaoVoice", "doubaoRate"]
               ).map((k) => (
                 <Field key={k} name={k} />
               ))}

@@ -1,7 +1,7 @@
 {
   "name": "语音",
-  "version": "0.4.2",
-  "description": "按住 🎤 说话（豆包识别，边说边进输入框），文字进输入框；点喇叭听回复，长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
+  "version": "0.5.0",
+  "description": "按住 🎤 说话（豆包，或硅基流动 / OpenAI 兼容接口识别，边说边进输入框），文字进输入框；点喇叭听回复（豆包、小米 MiMo、Azure、硅基流动 / OpenAI 兼容任选），长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
   "settings": [
@@ -11,6 +11,24 @@
       "type": "boolean",
       "default": true,
       "description": "📎 右边的 🎤：按住说话，松手发送，上滑取消，右滑放进输入框编辑。"
+    },
+    {
+      "key": "asrProvider",
+      "title": "识别用",
+      "type": "select",
+      "default": "doubao",
+      "required": true,
+      "options": [
+        {
+          "value": "doubao",
+          "label": "豆包（火山引擎）"
+        },
+        {
+          "value": "openai",
+          "label": "硅基流动 / OpenAI 兼容"
+        }
+      ],
+      "description": "豆包是流式识别，字随说随出；硅基流动等 OpenAI 兼容接口收整段音频，说话时每停顿一下就把那段送去识别，字晚一个停顿出来。"
     },
     {
       "key": "doubaoKey",
@@ -25,6 +43,49 @@
       "type": "string",
       "default": "",
       "description": "只有老版控制台需要：应用的 App ID。新版控制台留空。"
+    },
+    {
+      "key": "oaPreset",
+      "title": "服务商",
+      "type": "select",
+      "default": "siliconflow",
+      "required": true,
+      "options": [
+        {
+          "value": "siliconflow",
+          "label": "硅基流动"
+        },
+        {
+          "value": "openai",
+          "label": "OpenAI"
+        },
+        {
+          "value": "custom",
+          "label": "其他 OpenAI 兼容服务"
+        }
+      ],
+      "description": "识别和朗读共用。「其他」：任何提供 /audio/transcriptions、/audio/speech 接口的服务（Groq、本地 whisper / Kokoro 服务等），在下面填接口地址。"
+    },
+    {
+      "key": "oaKey",
+      "title": "API Key",
+      "type": "secret",
+      "default": "",
+      "description": "硅基流动：cloud.siliconflow.cn → API 密钥；OpenAI：platform.openai.com → API keys。本地服务不要 Key 就留空。"
+    },
+    {
+      "key": "oaBaseURL",
+      "title": "接口地址",
+      "type": "string",
+      "default": "",
+      "description": "留空用所选服务商的官方地址（硅基流动 https://api.siliconflow.cn/v1）。硅基流动国际站填 https://api.siliconflow.com/v1；走代理、或选了「其他」时填，如 https://api.groq.com/openai/v1。"
+    },
+    {
+      "key": "oaAsrModel",
+      "title": "识别模型",
+      "type": "string",
+      "default": "",
+      "description": "留空用默认：硅基流动 FunAudioLLM/SenseVoiceSmall（也可填 TeleAI/TeleSpeechASR），OpenAI gpt-4o-mini-transcribe，其他 whisper-1。"
     },
     {
       "key": "azureKey",
@@ -79,6 +140,10 @@
         {
           "value": "azure",
           "label": "Azure 语音"
+        },
+        {
+          "value": "openai",
+          "label": "硅基流动 / OpenAI 兼容"
         }
       ],
       "description": "换了服务商，下面跟着换成它的设置。"
@@ -318,6 +383,75 @@
       "description": "相对正常语速快多少，0 是正常，负数变慢。"
     },
     {
+      "key": "oaTtsModel",
+      "title": "朗读模型",
+      "type": "string",
+      "default": "",
+      "description": "留空用默认：硅基流动 FunAudioLLM/CosyVoice2-0.5B（也可填 fishaudio/fish-speech-1.5 等），OpenAI gpt-4o-mini-tts，其他 tts-1。"
+    },
+    {
+      "key": "sfVoice",
+      "title": "音色",
+      "type": "select",
+      "default": "anna",
+      "options": [
+        {
+          "value": "anna",
+          "label": "anna（沉稳女声）"
+        },
+        {
+          "value": "claire",
+          "label": "claire（温柔女声）"
+        },
+        {
+          "value": "bella",
+          "label": "bella（激情女声）"
+        },
+        {
+          "value": "diana",
+          "label": "diana（欢快女声）"
+        },
+        {
+          "value": "alex",
+          "label": "alex（沉稳男声）"
+        },
+        {
+          "value": "benjamin",
+          "label": "benjamin（低沉男声）"
+        },
+        {
+          "value": "charles",
+          "label": "charles（磁性男声）"
+        },
+        {
+          "value": "david",
+          "label": "david（欢快男声）"
+        },
+        {
+          "value": "custom",
+          "label": "自定义…"
+        }
+      ],
+      "description": "硅基流动的预置音色，跟着上面的朗读模型走。自己上传的音色选「自定义…」，在下面填它的完整名（speech:…）。用「试听」听一下。"
+    },
+    {
+      "key": "oaVoice",
+      "title": "音色名",
+      "type": "string",
+      "default": "",
+      "description": "OpenAI：留空是 coral，也可填 alloy、nova、shimmer 等；其他服务填它的音色名（留空用 alloy）；硅基流动的自定义音色填完整名，如 speech:名字:xxx:xxx。"
+    },
+    {
+      "key": "oaRate",
+      "title": "语速",
+      "type": "number",
+      "default": 0,
+      "min": -50,
+      "max": 100,
+      "unit": "%",
+      "description": "相对正常语速快多少，0 是正常，负数变慢。"
+    },
+    {
       "key": "scope",
       "title": "读哪些",
       "type": "select",
@@ -371,7 +505,7 @@
   "i18n": {
     "en": {
       "name": "Voice",
-      "description": "Hold 🎤 to talk (Doubao recognition, words go into the composer as you speak). Tap a speaker to hear a reply; hold the one by the composer for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
+      "description": "Hold 🎤 to talk (recognized by Doubao, or SiliconFlow / any OpenAI-compatible API; words go into the composer as you speak). Tap a speaker to hear a reply (Doubao, Xiaomi MiMo, Azure, or SiliconFlow / OpenAI-compatible); hold the one by the composer for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
       "settings": {
         "azureKey": {
           "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to read aloud when Azure is picked."
@@ -401,7 +535,8 @@
           "options": {
             "doubao": "Doubao (Volcengine)",
             "mimo": "Xiaomi MiMo",
-            "azure": "Azure Speech"
+            "azure": "Azure Speech",
+            "openai": "SiliconFlow / OpenAI-compatible"
           },
           "description": "Switch it and the settings below switch to its own."
         },
@@ -490,6 +625,62 @@
         "azureVoiceName": {
           "title": "Voice name",
           "description": "A voice name from Azure's Voice Gallery, e.g. zh-CN-XiaohanNeural, en-GB-SoniaNeural."
+        },
+        "asrProvider": {
+          "title": "Recognize with",
+          "options": {
+            "doubao": "Doubao (Volcengine)",
+            "openai": "SiliconFlow / OpenAI-compatible"
+          },
+          "description": "Doubao streams: words show as you say them. SiliconFlow and other OpenAI-compatible APIs take whole clips: each stretch is sent at your next pause, so words show a pause later."
+        },
+        "oaPreset": {
+          "title": "Service",
+          "options": {
+            "siliconflow": "SiliconFlow",
+            "openai": "OpenAI",
+            "custom": "Other OpenAI-compatible service"
+          },
+          "description": "Shared by recognition and reading. Other: any service with /audio/transcriptions and /audio/speech (Groq, a local whisper / Kokoro server…); set its address below."
+        },
+        "oaKey": {
+          "title": "API key",
+          "description": "SiliconFlow: cloud.siliconflow.cn → API keys; OpenAI: platform.openai.com → API keys. Leave empty for a local server that needs none."
+        },
+        "oaBaseURL": {
+          "title": "API address",
+          "description": "Empty: the picked service's own (SiliconFlow https://api.siliconflow.cn/v1). SiliconFlow's international site: https://api.siliconflow.com/v1. Set it for a proxy, or for Other, e.g. https://api.groq.com/openai/v1."
+        },
+        "oaAsrModel": {
+          "title": "Recognition model",
+          "description": "Empty: SiliconFlow FunAudioLLM/SenseVoiceSmall (or TeleAI/TeleSpeechASR), OpenAI gpt-4o-mini-transcribe, other whisper-1."
+        },
+        "oaTtsModel": {
+          "title": "Speech model",
+          "description": "Empty: SiliconFlow FunAudioLLM/CosyVoice2-0.5B (or fishaudio/fish-speech-1.5…), OpenAI gpt-4o-mini-tts, other tts-1."
+        },
+        "sfVoice": {
+          "title": "Voice",
+          "options": {
+            "anna": "anna (calm, female)",
+            "claire": "claire (gentle, female)",
+            "bella": "bella (passionate, female)",
+            "diana": "diana (cheerful, female)",
+            "alex": "alex (calm, male)",
+            "benjamin": "benjamin (deep, male)",
+            "charles": "charles (magnetic, male)",
+            "david": "david (cheerful, male)",
+            "custom": "Custom…"
+          },
+          "description": "SiliconFlow's preset voices, for the speech model above. For a voice you uploaded pick Custom… and type its full name (speech:…) below. Try it with Preview."
+        },
+        "oaVoice": {
+          "title": "Voice name",
+          "description": "OpenAI: empty is coral; alloy, nova, shimmer… also work. Another service: its voice name (empty: alloy). SiliconFlow custom: the full name, e.g. speech:name:xxx:xxx."
+        },
+        "oaRate": {
+          "title": "Speed",
+          "description": "How much faster than normal: 0 is normal, negative is slower."
         }
       }
     }
