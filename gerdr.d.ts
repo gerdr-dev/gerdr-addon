@@ -532,6 +532,8 @@ declare global {
     Fragment: any;
     useState<T>(initial: T | (() => T)): [T, (v: T | ((prev: T) => T)) => void];
     useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
+    /** Like useEffect, but before the browser paints: for measuring the page and placing something by it. */
+    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
     useMemo<T>(f: () => T, deps: readonly unknown[]): T;
     useCallback<T extends (...args: any[]) => any>(f: T, deps: readonly unknown[]): T;
     useRef<T>(initial: T): { current: T };
