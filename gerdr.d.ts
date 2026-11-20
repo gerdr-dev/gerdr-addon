@@ -23,6 +23,7 @@
 //                g.slot("settings") from these: fields shown only once a provider is picked, a line of help, and "pick
 //                one or type your own" = a select with a "custom" option plus a string drawn only while it's picked
 //                (<Field> for both; the voice add-on's Azure voice). Don't wait for gerdr to grow a new type.
+//                A misspelled field or type loads without a word: run `gerdr addon check <id>` after editing addon.json.
 //   index.ts     the UI half (or what "main" names): export default defineAddon({...}). It may import other files of
 //                the folder; images, sounds and other files it ships are reached with g.asset("icon.png").
 //
@@ -119,10 +120,26 @@ declare global {
     sessionTitle(fn: (session: SessionInfo, ctx: SessionTitleContext) => string | void | Promise<string | void>): Dispose;
 
     /**
-     * 加一条命令：出现在命令面板（prefix+:）里；给了 key 的话还能用快捷键触发。
-     * key 的写法和设置里一样："prefix+a"、"prefix+shift+k"、"ctrl+alt+p"。
+     * A command: listed in the palette (prefix+:), and with `key` run by that key. key is written as in Settings:
+     * "prefix+a", "prefix+shift+k", "ctrl+alt+p". It is only the default: the command is also a row of Settings →
+     * Shortcuts (group "Add-ons"), where the person changes, adds or removes its keys; draw that row in your own
+     * settings with <g.ui.Shortcut command="…" />. On a clash with a built-in key, the built-in wins.
+     *
+     * release: the command is held (push to talk). run is called when its key goes down, release when it comes up
+     * (or the window loses focus while it is down); auto-repeat calls neither again. A held command's key may also be
+     * one modifier alone, by its side: "altright" (right Option / right Alt), "altleft", "controlright",
+     * "controlleft", "shiftright", "shiftleft", "metaright", "metaleft". Such a key starts the command once it has
+     * been held by itself for 200ms, so the combinations it is part of (⌥←) still work. Keys pressed while holding
+     * go on as usual: listen for Esc yourself to cancel. A held command isn't listed in the palette (nothing would
+     * release it there).
      */
-    command(cmd: { id: string; title: string; key?: string; run(ctx: CommandContext): void | Promise<void> }): Dispose;
+    command(cmd: {
+      id: string;
+      title: string;
+      key?: string;
+      run(ctx: CommandContext): void | Promise<void>;
+      release?(ctx: CommandContext): void | Promise<void>;
+    }): Dispose;
 
     on(event: "turnEnd", fn: (e: SessionEvent & { stopReason: string; error?: string }) => void): Dispose;
     on(event: "needsInput", fn: (e: SessionEvent & { kind: "permission" | "ask" }) => void): Dispose;
@@ -157,6 +174,12 @@ declare global {
     readonly React: GerdrReact;
     /** gerdr's own building blocks (shadcn/ui), so an add-on looks like the rest of the app. */
     readonly ui: {
+      /**
+       * One of your commands' keys (g.command's id), as a row of Settings → Shortcuts: the same keys, the same
+       * recorder, so changing them here or there is one change. For your settings slot, beside the <Field>s.
+       * title: defaults to the command's; description: a line under it. Draws nothing until the command exists.
+       */
+      Shortcut: Component<{ command: string; title?: string; description?: string }>;
       Button: Component<{ variant?: "default" | "outline" | "ghost" | "secondary" | "destructive"; size?: "default" | "sm" | "icon" | "icon-sm"; className?: string; title?: string; disabled?: boolean; onClick?: (e: any) => void; children?: any }>;
       Popover: Component<{ open?: boolean; onOpenChange?: (open: boolean) => void; children?: any }>;
       PopoverTrigger: Component<{ asChild?: boolean; children?: any }>;
@@ -381,6 +404,8 @@ declare global {
      * reached, the URL isn't http(s), or 30s pass. Responses over 10 MB are refused.
      * binary: true for an answer that isn't text (audio, images): read it with bytes() / blob(); text is then "".
      * A body that is a Blob / ArrayBuffer / Uint8Array is sent as those bytes (recorded audio to a speech-to-text API).
+     * In the phone Apps the phone makes the request itself (no detour through the computer); local / private
+     * addresses, and hosts the phone can't reach, still go through the computer.
      */
     fetch(
       url: string,
@@ -392,6 +417,8 @@ declare global {
      * messages pass both ways as they are, text as text, binary as binary. Resolves an opening WebSocket: set
      * binaryType, wait for "open", send, close as usual. A refusal (wrong key) shows as an error / close event.
      * For streaming APIs: speech-to-text that returns words as they are said, realtime models.
+     * In the phone Apps the phone opens it itself, straight to the service; local / private addresses, and hosts the
+     * phone can't reach, still go through the computer. Either way you get the same WebSocket.
      */
     socket(url: string, init?: { headers?: Record<string, string>; protocols?: string[] }): Promise<WebSocket>;
     /**

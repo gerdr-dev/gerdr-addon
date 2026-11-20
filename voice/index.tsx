@@ -1522,23 +1522,14 @@ export default defineAddon({
     }
 
     // ---------- hold a key to talk (a computer's keyboard) ----------
-    // Hold the key (holdKey, a modifier by default: right Option / right Alt, under the right thumb, and never held
-    // alone otherwise) to talk into the composer you're in; let go and the words stay there, not sent; Esc while
-    // holding drops them. A modifier is also half of many combinations (⌥← moves a word), so talking starts only once
-    // it has been held alone for HOLD_KEY_MS: another key before that means it was a combination, and nothing happens.
-    // Listened to on window in the capture phase, before Gerdr's keys, the composer and a terminal see it.
+    // A held command (g.command with release): its key, right Option / right Alt by default (under the right thumb,
+    // and never held alone otherwise), is a row of Settings → Shortcuts like any other, and of this add-on's settings
+    // (g.ui.Shortcut), one value for both. Gerdr starts a lone modifier only once it's been held by itself for a
+    // moment, so ⌥← and the rest still work. Talks into the composer you're in; letting go leaves the words there,
+    // not sent; Esc while holding drops them. A Gerdr without held commands never calls release: then the key is
+    // never bound either ("altright" isn't a key it knows), so nothing happens.
     const composers = new Map<string, { ctx: ComposerContext; el: HTMLElement }>();
-    const HOLD_KEY_MS = 200;
-    const holdKey = () => g.settings.get<string>("holdKey") || "AltRight";
-    let keyHold: { code: string; timer?: ReturnType<typeof setTimeout>; on: boolean } | null = null;
-    const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-    // Held with another modifier (⌘⌥, ⇧⌥…): a combination. AltGr (right Alt on many European layouts off the Mac)
-    // comes with Ctrl down: that is still the key alone
-    const otherMods = (e: KeyboardEvent, code: string) =>
-      (e.metaKey && !code.startsWith("Meta")) ||
-      (e.ctrlKey && !code.startsWith("Control") && !(code === "AltRight" && !isMac)) ||
-      (e.altKey && !code.startsWith("Alt")) ||
-      (e.shiftKey && !code.startsWith("Shift"));
+    let keyTalk = false;
     /** The composer the key talks into: the one holding focus, else the focused pane's. */
     function keyComposer() {
       const a = document.activeElement;
@@ -1546,76 +1537,40 @@ export default defineAddon({
       const c = composers.get(activeSession());
       return c?.el.isConnected ? c : null;
     }
-    function startKeyTalk() {
-      const kh = keyHold;
-      if (!kh || rec || st.recording || st.busy) return;
-      const c = keyComposer();
-      if (!c) return void (keyHold = null); // not in a conversation (a terminal, settings): leave the key alone
-      kh.on = true;
-      target = c.ctx;
-      beginPress(c.el, c.ctx, 0, 0, "mic", "key");
-    }
-    async function endKeyTalk() {
-      const box = st.anchorEl;
-      await finishRecording();
-      // Back to typing: the words are at the caret, Enter sends them
-      box?.querySelector("textarea")?.focus();
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (keyHold?.on) {
-        if (e.code === keyHold.code) return e.preventDefault(); // its repeats
-        if (e.key === "Escape") {
-          // Esc would also reach the composer, which stops a running agent with it
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          if (st.recording) stopRecording(true);
-        }
-        return; // other keys type as usual
-      }
-      if (keyHold) {
-        if (e.code === keyHold.code || (!isMac && e.code === "ControlLeft" && keyHold.code === "AltRight")) return; // a repeat, AltGr's Ctrl
-        clearTimeout(keyHold.timer);
-        keyHold = null; // a combination, not a hold
-        return;
-      }
-      const code = holdKey();
-      if (code === "off" || e.code !== code || e.repeat || !inputOn() || rec || st.recording || st.busy || otherMods(e, code)) return;
-      keyHold = { code, on: false, timer: setTimeout(startKeyTalk, HOLD_KEY_MS) };
+    // Esc would also reach the composer, which stops a running agent with it
+    const onEsc = (e: KeyboardEvent) => {
+      if (!keyTalk || e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (st.recording) stopRecording(true);
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (!keyHold || e.code !== keyHold.code) return;
-      const kh = keyHold;
-      clearTimeout(kh.timer);
-      keyHold = null;
-      if (!kh.on) return;
-      e.preventDefault(); // Alt let go alone: no browser menu
-      if (st.recording) endKeyTalk();
-    };
-    // The keyup of a key held while switching away (⌘Tab) never reaches the page: end it as if let go
-    const onBlur = () => {
-      if (!keyHold) return;
-      clearTimeout(keyHold.timer);
-      const on = keyHold.on;
-      keyHold = null;
-      if (on && st.recording) endKeyTalk();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("keyup", onKeyUp, true);
-    window.addEventListener("blur", onBlur);
-    /** The held key's name as the keyboard shows it. */
-    const keyName = (code: string) =>
-      ({
-        AltRight: isMac ? T("右 Option", "right Option") : T("右 Alt", "right Alt"),
-        AltLeft: isMac ? T("左 Option", "left Option") : T("左 Alt", "left Alt"),
-        ControlRight: T("右 Ctrl", "right Ctrl"),
-        ShiftRight: T("右 Shift", "right Shift"),
-      })[code] ?? code;
+    window.addEventListener("keydown", onEsc, true);
+    const offTalkKey = g.command({
+      id: "voice.talk",
+      title: T("按住说话（松开留在输入框）", "Hold to talk (let go: into the composer)"),
+      key: "altright",
+      run: () => {
+        if (!inputOn() || rec || st.recording || st.busy) return;
+        const c = keyComposer();
+        if (!c) return; // not in a conversation (a terminal, settings)
+        keyTalk = true;
+        target = c.ctx;
+        beginPress(c.el, c.ctx, 0, 0, "mic", "key");
+      },
+      release: async () => {
+        if (!keyTalk) return;
+        keyTalk = false;
+        if (!st.recording) return; // cancelled with Esc
+        const box = st.anchorEl;
+        await finishRecording();
+        // Back to typing: the words are at the caret, Enter sends them
+        box?.querySelector("textarea")?.focus();
+      },
+    });
 
     const micAction = () => g.composerAction({
       id: "mic",
-      title:
-        T("按住说话：松手发送，上滑取消，右滑放进输入框编辑", "Hold to talk: let go to send, slide up to cancel, right to edit it first") +
-        (holdKey() === "off" ? "" : T(` · 键盘：按住${keyName(holdKey())}说话，松开留在输入框`, ` · keyboard: hold ${keyName(holdKey())} to talk, let go to keep it in the composer`)),
+      title: T("按住说话：松手发送，上滑取消，右滑放进输入框编辑", "Hold to talk: let go to send, slide up to cancel, right to edit it first"),
       place: "start",
       // render gives each composer its own ctx; icon is for a Gerdr without render, where the click's run says
       render: (ctx) => <Mic ctx={ctx} />,
@@ -2016,7 +1971,16 @@ export default defineAddon({
               ))}
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
-              <Field name="holdKey" />
+              {g.ui.Shortcut && (
+                <g.ui.Shortcut
+                  command="voice.talk"
+                  title={T("键盘按住说话", "Hold a key to talk")}
+                  description={T(
+                    "电脑上按住说话，松开后文字留在输入框里不发送，按 Esc 取消；说进光标所在的输入框，没有就是当前会话的。单个修饰键要单独按住一小会儿才开始，组合键照常用。和设置 → 快捷键里的是同一个。",
+                    "On a computer: hold to talk, let go and the words stay in the composer, not sent; Esc cancels. Into the composer with the caret, else the focused conversation's. A modifier alone starts once held by itself for a moment; combinations still work. The same key as in Settings → Shortcuts.",
+                  )}
+                />
+              )}
             </div>
           )}
           <Field name="enableOutput" />
@@ -2048,10 +2012,8 @@ export default defineAddon({
       stopRecording(true);
       stopPlaying();
       document.removeEventListener("pointerdown", onTouch, true);
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("keyup", onKeyUp, true);
-      window.removeEventListener("blur", onBlur);
-      if (keyHold) clearTimeout(keyHold.timer);
+      window.removeEventListener("keydown", onEsc, true);
+      offTalkKey();
       spotCss.remove();
       clearInterval(halvesTimer);
       for (const h of halves) h.offs.forEach((f) => f());
