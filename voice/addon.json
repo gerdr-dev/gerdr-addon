@@ -1,7 +1,7 @@
 {
   "name": "语音",
-  "version": "0.5.0",
-  "description": "按住 🎤 说话（豆包，或硅基流动 / OpenAI 兼容接口识别，边说边进输入框），文字进输入框；点喇叭听回复（豆包、小米 MiMo、Azure、硅基流动 / OpenAI 兼容任选），长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
+  "version": "0.6.0",
+  "description": "按住 🎤（电脑上按住右 Option / 右 Alt）说话（豆包，或硅基流动 / OpenAI 兼容接口识别，边说边进输入框），文字进输入框；点喇叭听回复（豆包、小米 MiMo、Azure、硅基流动 / OpenAI 兼容任选），长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],
   "settings": [
@@ -114,6 +114,35 @@
       "type": "text",
       "default": "Claude\nCodex\nagent\nGerdr\nMCP\nskill\nprompt\nsession\nadd-on\ncommit\nPR",
       "description": "一行一个，常说又容易认错的词：产品名、人名、术语。每次识别连同这段对话里出现过的英文词一起当提示。"
+    },
+    {
+      "key": "holdKey",
+      "title": "键盘按住说话",
+      "type": "select",
+      "default": "AltRight",
+      "options": [
+        {
+          "value": "AltRight",
+          "label": "右 Option / 右 Alt（默认）"
+        },
+        {
+          "value": "AltLeft",
+          "label": "左 Option / 左 Alt"
+        },
+        {
+          "value": "ControlRight",
+          "label": "右 Ctrl"
+        },
+        {
+          "value": "ShiftRight",
+          "label": "右 Shift"
+        },
+        {
+          "value": "off",
+          "label": "不用"
+        }
+      ],
+      "description": "电脑上按住这个键说话（单独按住一下才开始，跟别的键一起按的组合键不受影响），松开后文字留在输入框里不发送，按 Esc 取消。说进的是光标所在的输入框，没有就是当前会话的。"
     },
     {
       "key": "enableOutput",
@@ -505,7 +534,7 @@
   "i18n": {
     "en": {
       "name": "Voice",
-      "description": "Hold 🎤 to talk (recognized by Doubao, or SiliconFlow / any OpenAI-compatible API; words go into the composer as you speak). Tap a speaker to hear a reply (Doubao, Xiaomi MiMo, Azure, or SiliconFlow / OpenAI-compatible); hold the one by the composer for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
+      "description": "Hold 🎤 (or right Option / right Alt on a computer) to talk (recognized by Doubao, or SiliconFlow / any OpenAI-compatible API; words go into the composer as you speak). Tap a speaker to hear a reply (Doubao, Xiaomi MiMo, Azure, or SiliconFlow / OpenAI-compatible); hold the one by the composer for auto read: replies are read as agents finish, queued, each once. Input and reading each have a switch.",
       "settings": {
         "azureKey": {
           "description": "KEY 1 or KEY 2 on the \"Keys and Endpoint\" page of your Speech resource. Used to read aloud when Azure is picked."
@@ -681,6 +710,17 @@
         "oaRate": {
           "title": "Speed",
           "description": "How much faster than normal: 0 is normal, negative is slower."
+        },
+        "holdKey": {
+          "title": "Hold a key to talk",
+          "options": {
+            "AltRight": "Right Option / right Alt (default)",
+            "AltLeft": "Left Option / left Alt",
+            "ControlRight": "Right Ctrl",
+            "ShiftRight": "Right Shift",
+            "off": "None"
+          },
+          "description": "On a computer, hold this key to talk (it starts once the key is held alone for a moment, so combinations with it still work); let go and the words stay in the composer, not sent; Esc cancels. Talks into the composer with the caret, else the focused conversation's."
         }
       }
     }
