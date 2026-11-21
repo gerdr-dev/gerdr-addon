@@ -364,7 +364,9 @@ export default defineAddon({
       return { text: head + tail, caret: head.length };
     };
     const touched = () => !!target && lastShown !== null && target.text !== lastShown;
-    const showLive = (t: string) => {
+    // hyp: the end of t the recognizer may still change. It goes in as the composer's pending stretch, drawn in grey
+    // until the recognizer settles it (an older Gerdr ignores the third argument and draws it all alike)
+    const showLive = (t: string, hyp = "") => {
       if (!target || liveBase === null) return;
       if (touched()) {
         mark(`touched(${target.text.length}/${lastShown?.length})`);
@@ -372,7 +374,8 @@ export default defineAddon({
       }
       const o = around(liveBase, t);
       lastShown = o.text;
-      target.setText(o.text, o.caret);
+      const n = t.endsWith(hyp) ? hyp.length : 0;
+      target.setText(o.text, o.caret, n ? { start: o.caret - n, end: o.caret } : undefined);
     };
     const dropLive = () => {
       if (target && liveBase !== null && !touched()) target.setText(liveBase + liveTail, liveBase.length);
@@ -398,7 +401,7 @@ export default defineAddon({
         .then((t) => {
           if (!t || !segs.includes(seg)) return;
           seg.fixed = t;
-          showLive(shown(st.live.hyp));
+          showLive(shown(st.live.hyp), st.live.hyp);
         })
         .catch((e) => {
           seg.failed = true;
@@ -412,7 +415,7 @@ export default defineAddon({
       if (!done.startsWith(have)) [segs, have] = [[], ""]; // the recognizer took settled words back
       if (done.length > have.length) addSeg(done.slice(have.length));
       put({ live: { done, hyp } });
-      showLive(shown(hyp)); // straight into the composer, as said
+      showLive(shown(hyp), hyp); // straight into the composer, as said: the settled words solid, the rest grey
     };
 
     /** A socket that queues what's sent before it opens. */
