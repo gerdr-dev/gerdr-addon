@@ -367,6 +367,7 @@ export default defineAddon({
     // hyp: the end of t the recognizer may still change. It goes in as the composer's pending stretch, drawn in grey
     // until the recognizer settles it (an older Gerdr ignores the third argument and draws it all alike). With the
     // finger on "cancel" all the words said are struck through instead: letting go now drops them
+    let caretOff = 0; // caret traces this recording (showLive)
     const showLive = (t: string, hyp = "") => {
       if (!target || liveBase === null) return;
       if (touched()) {
@@ -377,6 +378,15 @@ export default defineAddon({
       lastShown = o.text;
       const n = st.swipe === "cancel" ? t.length : t.endsWith(hyp) ? hyp.length : 0;
       target.setText(o.text, o.caret, n ? { start: o.caret - n, end: o.caret, look: st.swipe === "cancel" ? "cancel" : "pending" } : undefined);
+      // Traced: the caret not where the words end a moment later (seen once on the Android App: the caret sat inside
+      // the settled words, never reproduced). Only while the box still holds this text, so newer words don't count;
+      // at most three per recording
+      const tg = target;
+      setTimeout(() => {
+        const ta = document.querySelector<HTMLTextAreaElement>("textarea[data-composer]:focus");
+        const at = tg.selection.start;
+        if (ta?.value === o.text && at !== o.caret && caretOff++ < 3) mark(`caret(${at}/${o.caret}/${o.text.length} n=${n})`);
+      }, 100);
     };
     const dropLive = () => {
       if (target && liveBase !== null && !touched()) target.setText(liveBase + liveTail, liveBase.length);
@@ -695,6 +705,7 @@ export default defineAddon({
       stopPlaying();
       const sid = target?.sessionId || activeSession();
       clearTimeout(noteTimer);
+      caretOff = 0;
       put({ recording: sid || "?", since: Date.now(), live: { done: "", hyp: "" }, swipe: "", note: null });
       segs = [];
       segSession = sid;
