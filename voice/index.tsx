@@ -453,6 +453,7 @@ export default defineAddon({
       sock.binaryType = "arraybuffer";
       mark("sock");
       let got = 0;
+      let mism = 0; // responses whose text didn't start with the settled sentences (one is traced)
       const frame = (type: number, flags: number, json: boolean, payload: Uint8Array) => {
         const out = new Uint8Array(8 + payload.length);
         out.set([0x11, (type << 4) | flags, json ? 0x10 : 0x00, 0]);
@@ -521,9 +522,16 @@ export default defineAddon({
         if (!res?.result) return flags & 2 ? r.finish() : undefined;
         const text: string = res.result.text ?? "";
         if (!text && segs.length + st.live.hyp.length > 0) return flags & 2 ? r.finish() : undefined;
-        const settled = ((res?.result?.utterances ?? []) as any[]).filter((u) => u.definite).map((u) => u.text ?? "").join("");
+        const utts = (res?.result?.utterances ?? []) as any[];
+        const settled = utts.filter((u) => u.definite).map((u) => u.text ?? "").join("");
         if (settled && text.startsWith(settled)) setLive(r, settled, text.slice(settled.length));
-        else setLive(r, "", text);
+        else if (settled) {
+          // The text doesn't start with the settled sentences as they read joined (a space between them, or the
+          // second pass rewrote one): take the sentences as Doubao marks them. Taking it all as unsettled drew the
+          // whole composer grey and dropped the fixed-up sentences (reported)
+          if (!mism++) mark(`mismatch(${JSON.stringify(settled.slice(-12))}|${JSON.stringify(text.slice(settled.length - 12, settled.length + 4))})`);
+          setLive(r, settled, utts.filter((u) => !u.definite).map((u) => u.text ?? "").join(""));
+        } else setLive(r, "", text);
         if (flags & 2) {
           mark(`last(n=${got} len=${text.length})`);
           r.finish(); // the last response
