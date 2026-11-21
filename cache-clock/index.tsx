@@ -10,7 +10,9 @@
 export default defineAddon({
   setup(g) {
     return g.turnStat((t) => {
-      if (!t.latest || !t.ts || t.agent !== "claude") return;
+      // By engine, not agent: a variant (claude-2, another account) or a role running Claude Code counts too.
+      // base is missing on a Gerdr older than it; agent is right there for the plain claude.
+      if (!t.latest || !t.ts || (t.base ?? t.agent) !== "claude") return;
       // Read each time: a change in Settings → Add-ons applies at once
       const ttl = (g.settings.get<number>("ttlMinutes") || 60) * 60_000;
       const warn = Math.min((g.settings.get<number>("warnMinutes") || 10) * 60_000, ttl);

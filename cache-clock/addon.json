@@ -1,6 +1,6 @@
 {
   "name": "缓存时钟",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "缓存还在时什么都不显示；快过期时最新一轮的时间旁边出现黄色的「缓存 N 分钟后过期」，过期了变红色「缓存已过期」。",
   "icon": "icon.svg",
   "screenshots": [
