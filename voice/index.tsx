@@ -365,7 +365,8 @@ export default defineAddon({
     };
     const touched = () => !!target && lastShown !== null && target.text !== lastShown;
     // hyp: the end of t the recognizer may still change. It goes in as the composer's pending stretch, drawn in grey
-    // until the recognizer settles it (an older Gerdr ignores the third argument and draws it all alike)
+    // until the recognizer settles it (an older Gerdr ignores the third argument and draws it all alike). With the
+    // finger on "cancel" all the words said are struck through instead: letting go now drops them
     const showLive = (t: string, hyp = "") => {
       if (!target || liveBase === null) return;
       if (touched()) {
@@ -374,8 +375,8 @@ export default defineAddon({
       }
       const o = around(liveBase, t);
       lastShown = o.text;
-      const n = t.endsWith(hyp) ? hyp.length : 0;
-      target.setText(o.text, o.caret, n ? { start: o.caret - n, end: o.caret } : undefined);
+      const n = st.swipe === "cancel" ? t.length : t.endsWith(hyp) ? hyp.length : 0;
+      target.setText(o.text, o.caret, n ? { start: o.caret - n, end: o.caret, look: st.swipe === "cancel" ? "cancel" : "pending" } : undefined);
     };
     const dropLive = () => {
       if (target && liveBase !== null && !touched()) target.setText(liveBase + liveTail, liveBase.length);
@@ -1343,7 +1344,12 @@ export default defineAddon({
       const dx = x - pressAt.x;
       const dy = pressAt.y - y;
       const swipe = dy > 60 && dy >= dx ? "cancel" : dx > 60 ? "edit" : "";
-      if (swipe !== st.swipe) put({ swipe });
+      if (swipe !== st.swipe) {
+        const was = st.swipe;
+        put({ swipe });
+        // Into or out of "cancel": the words in the composer are struck through, or back
+        if (was === "cancel" || swipe === "cancel") showLive(shown(st.live.hyp), st.live.hyp);
+      }
     }
 
     // The props that make an element a hold-to-talk surface: no scrolling, no text selection or callout, the

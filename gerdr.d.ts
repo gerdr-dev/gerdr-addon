@@ -69,6 +69,14 @@
 //     {"type":"answer","session":"…","reqId":"…","skip":true}                  don't answer a question
 //                                                         only with "pending": true — that's the person's power to
 //                                                         approve commands, given when they install the add-on
+//     {"type":"routes","routes":[{"from":"https://relay.example","to":"http://127.0.0.1:7861","agents":["claude"]}]}
+//                                                         only with "service": {…, "routes": true}: agents whose API
+//                                                         address starts with from (Claude Code's ANTHROPIC_BASE_URL,
+//                                                         Codex's provider base_url, a Gerdr Agent provider's baseUrl)
+//                                                         use to instead while it runs; agents (optional, ids as
+//                                                         g.agents() lists them) narrows it. You forward to from. to:
+//                                                         http on 127.0.0.1 / localhost. A new line replaces the list;
+//                                                         [] or exiting ends the routing
 //
 // Other stdout lines go to gerdr's log; stderr goes to ~/.gerdr/logs/addons/<id>.log.
 // stdin closing means gerdr is stopping it (quitting, add-on removed): clean up (let go of the device) and exit.
@@ -502,6 +510,12 @@ declare global {
      * up. Today's: g.turns({ since: new Date().setHours(0, 0, 0, 0) }). g.on("turn") brings each new one.
      */
     turns(range: { since: number; until?: number }): Promise<TurnRecord[]>;
+    /**
+     * The agents a session can be started on: the built-in ones (claude, codex, native) and the person's own roles /
+     * variants, as `gerdr session agents` lists them. For letting the person pick some (which agents a service's
+     * "routes" take): store the picked ids in a setting of yours and draw the choice in g.slot("settings").
+     */
+    agents(): AgentEntry[];
 
     /**
      * Events: things that happened outside a conversation (a review comment, a failed pipeline, a chat message), one
@@ -615,6 +629,16 @@ declare global {
     open?: "hover" | "click";
   }
 
+  interface AgentEntry {
+    /** What sessions record as their agent and `gerdr session new --agent` takes: claude / codex / native / a role's id. */
+    id: string;
+    name: string;
+    /** The engine running it: "claude" (Claude Code), "codex", "native" (Gerdr Agent), an external agent's id. */
+    base: string;
+    /** Installed and usable on this computer. */
+    available: boolean;
+  }
+
   /** g.slot("settings"): your own layout of the settings declared in addon.json. */
   interface SettingsSlotProps {
     /** One declared setting, drawn as the generated form draws it: <Field name="apiKey" />. */
@@ -635,15 +659,19 @@ declare global {
 
   interface TurnStatInfo {
     sessionId: string;
-    /** claude / codex / … */
+    /** The session's agent as picked: claude / codex / a variant like claude-2 / a role's id. */
     agent: string;
+    /** The engine running it: "claude" (Claude Code), "codex", "native" (Gerdr Agent), an external agent's id.
+     *  Tell agents apart by this, not by agent. */
+    base: string;
     /** When the turn ended (unix ms); missing on very old turns. */
     ts?: number;
     /** How long it ran (ms). */
     ms: number;
     /** Output tokens. */
     tokens: number;
-    /** The newest finished turn of the session (the one the next message continues from). */
+    /** The newest finished turn of the session (the one the next message continues from); false again as soon as a
+     *  message is sent after it, without waiting for that turn to finish. */
     latest: boolean;
     /** The current time (unix ms), refreshed every 30s. */
     now: number;
@@ -700,9 +728,10 @@ declare global {
      * pending: the stretch [start, end) of the new text that isn't settled yet, drawn in grey (voice input: words the
      * recognizer may still change, the way an input method shows what it is composing). It is part of the text all the
      * same (sent if the person sends now) and lasts until the next setText, or until the person edits the text by hand.
-     * Older Gerdr ignores it.
+     * look "cancel": struck through instead, for words about to be dropped (voice input with the finger on "cancel").
+     * Older Gerdr ignores it (or the look, drawing it grey).
      */
-    setText(text: string, caret?: number, pending?: { start: number; end: number }): void;
+    setText(text: string, caret?: number, pending?: { start: number; end: number; look?: "pending" | "cancel" }): void;
     /**
      * Send what is in the composer, attached images and files included, as pressing Enter does (g.actions.send takes
      * text only). A setText just before it is what goes. With no composer on screen, only the text is sent.
@@ -812,8 +841,14 @@ declare global {
     /** When it ended (unix ms). */
     ts: number;
     sessionId: string;
-    /** claude / codex / … (a variant like claude-2 as is) */
+    /** claude / codex / … (a variant like claude-2, or a role's id, as is) */
     agent: string;
+    /**
+     * The engine that ran it, whatever the variant or role: "claude" (Claude Code), "codex", "native" (Gerdr Agent),
+     * an external agent's own id. Tell agents apart by this, not by agent. Missing on turns logged before Gerdr had
+     * it: use agent then.
+     */
+    base?: string;
     cwd?: string;
     /** end_turn (finished normally) · cancelled · error · max_tokens · refusal … */
     stopReason: string;
@@ -850,6 +885,8 @@ declare global {
     text?: string;
     /** The "link" settings' addresses the process reported ({"type":"status","links"}), by setting key. */
     links?: Record<string, string>;
+    /** The API addresses it serves for agents now ({"type":"routes"}; needs "routes": true in its addon.json). */
+    routes?: { from: string; to: string; agents?: string[] }[];
     /** Why it isn't running: command not found, or how it last exited plus the end of its stderr. */
     error?: string;
     restarts?: number;
