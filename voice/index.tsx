@@ -32,8 +32,8 @@ type State = {
   // where the finger slid: up = releasing drops the recording, right = releasing does the other of send / edit;
   // neither = releasing does what sendOnRelease / sendOnReleaseSpot says
   swipe: "" | "cancel" | "right";
-  // letting go sends (swipe right: into the composer to edit) instead of the other way round. Per device (g.storage),
-  // off by default: a phone wants it, a computer usually doesn't. One for the bar's mic, one for the "hold to talk"
+  // letting go sends (swipe right: into the composer to edit) instead of the other way round. Per device (g.storage):
+  // the mic's off by default, the spot's on. One for the bar's mic, one for the "hold to talk"
   // spot in the middle of an empty field (phones only): that one is for a quick message, sent; the mic, also there
   // when the field already holds text, for adding to it and editing
   sendOnRelease: boolean;
@@ -257,11 +257,11 @@ export default defineAddon({
     const isZh = zh.v;
     const inputOn = () => g.settings.get<boolean>("enableInput") !== false;
     const outputOn = () => g.settings.get<boolean>("enableOutput") !== false;
-    // The spot's switch came after the mic's (0.6.6): until it's set it follows the mic's, so a phone that had it on keeps sending
+    // The spot is on by default: it only exists on phones, and only while the field is empty, i.e. for a quick message
     put({
       auto: !!g.storage.get<boolean>("auto"),
       sendOnRelease: !!g.storage.get<boolean>("sendOnRelease"),
-      sendOnReleaseSpot: !!(g.storage.get<boolean>("sendOnReleaseSpot") ?? g.storage.get<boolean>("sendOnRelease")),
+      sendOnReleaseSpot: g.storage.get<boolean>("sendOnReleaseSpot") ?? true,
     });
 
     // Sound needs a tap to start it (Android's WebView: for each element it hasn't played). Turning auto read on is
@@ -2027,8 +2027,8 @@ export default defineAddon({
           })}
           <div className="text-[11px] text-muted-foreground">
             {T(
-              "开：松手直接发出去，右滑放进输入框编辑。关（默认）：松手放进输入框，右滑直接发送。只管这台设备，手机和电脑可以不一样。中间的「按住说话」只在手机上、输入框空着时出现，适合说一句就发。键盘按住说话总是放进输入框。",
-              "On: letting go sends it, swipe right puts it in the composer to edit. Off (default): letting go puts it in the composer, swipe right sends. Only this device, so the phone and the computer can differ. \"Hold to talk\" in the field shows on phones while the field is empty: good for a quick message. Holding a key always puts it in the composer.",
+              "开：松手直接发出去，右滑放进输入框编辑。关：松手放进输入框，右滑直接发送。只管这台设备。中间的「按住说话」只在手机上、输入框空着时出现，适合说一句就发，默认开；🎤 默认关。键盘按住说话总是放进输入框。",
+              "On: letting go sends it, swipe right puts it in the composer to edit. Off: letting go puts it in the composer, swipe right sends. Only this device. \"Hold to talk\" in the field shows on phones while the field is empty, for a quick message: on by default; 🎤 off by default. Holding a key always puts it in the composer.",
             )}
           </div>
         </div>
