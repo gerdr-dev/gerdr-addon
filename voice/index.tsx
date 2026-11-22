@@ -59,6 +59,8 @@ const put = (p: Partial<State>) => {
 
 /** Each piece's limit in characters: the first short so the first sound comes fast, then doubling to the last. */
 const LIMITS = [60, 120, 240, 300];
+/** Speech requests in flight at once while reading (see `speech` in `read`). */
+const PARALLEL = 3;
 /**
  * A heading goes with the paragraph after it: a line shorter than SHORT with no stop at its end (a heading, a label),
  * or any line shorter than TINY. Alone it costs a request (~1s, plus ~0.2s of silence at each end of its clip) for a
@@ -1064,8 +1066,8 @@ export default defineAddon({
       return p === "mimo" ? mimo(text) : p === "azure" ? azure(text) : p === "openai" ? oaSpeech(text) : doubao(text);
     };
 
-    // Synthesis runs one piece after another, up to AHEAD pieces past the one playing, without waiting for g.audio to
-    // ask; stopping (ctx.signal) ends the generator through g.audio and starts nothing more
+    // Synthesis runs ahead of playback without waiting for g.audio to ask, PARALLEL pieces at a time; stopping
+    // (ctx.signal) ends the generator through g.audio and starts nothing more
     /**
      * Read `text` aloud. With a message action's ctx, each paragraph is marked on screen as it starts, and a click on
      * one jumps the reading there: what plays stops, and it goes on from that paragraph. Pieces already synthesized
@@ -1083,13 +1085,17 @@ export default defineAddon({
       // synthesized, or one of a chain still going, is reused, else the next chain would play that failure
       const done = new Map<number, { job: Promise<Blob>; stop: AbortSignal; ok?: boolean }>();
 
-      // From piece `start` on, one after another, each as soon as the one before is done (not when g.audio asks: it
-      // asks once a piece starts playing, too late for a long one). A failure is seen when its piece's turn comes, not
-      // as an unhandled rejection; once `stop` aborts, nothing more starts.
+      // From piece `start` on, PARALLEL at a time: each starts as soon as the one PARALLEL places before it is done (not
+      // when g.audio asks: it asks once a piece starts playing, too late for a long one). Not one after another: a
+      // request is mostly waiting (Azure's eastus from China: 2-4s from a computer for a 4-10s clip, and the phone App
+      // calls it over the phone's own network), so in a row a short paragraph (a bullet point) ended before the next
+      // one's request did, and the reading stopped for seconds after every sentence. A failure is seen when its piece's turn comes, not as an unhandled
+      // rejection; once `stop` aborts, nothing more starts.
       async function* speech(start: number, stop: AbortSignal) {
         const jobs: Promise<Blob>[] = [];
         for (let i = start; i < ps.length; i++) {
-          const before = jobs.length ? jobs[jobs.length - 1].catch(() => {}) : Promise.resolve();
+          const gate = jobs[jobs.length - PARALLEL];
+          const before = gate ? gate.catch(() => {}) : Promise.resolve();
           const had = done.get(i);
           if (had && (had.ok || !had.stop.aborted)) {
             jobs.push(had.job);
