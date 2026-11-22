@@ -5,7 +5,8 @@
 // Input: hold the mic (pinned after the attach button) to talk. The mic's PCM goes to Doubao's streaming
 // recognizer (through g.socket) and the words go into the composer as they're said; each sentence, once settled, can
 // be fixed up by a configured model that reads the conversation (g.llm) and replaced in place, so what's on screen is
-// what gets sent (letting go sends it; swipe right puts it in the composer to edit first). Azure recognition was here too and was dropped: its streaming text was rough
+// what gets sent (letting go leaves it in the composer and swiping right sends it, or the other way round with
+// "send on release" on: a per-device switch, since on a phone sending is the point and on a computer it isn't). Azure recognition was here too and was dropped: its streaming text was rough
 // enough to need a second pass on release, which replaced what you saw — Doubao re-checks each sentence itself.
 // Or recognition through an OpenAI-compatible /audio/transcriptions (SiliconFlow, OpenAI, a local whisper…): it takes
 // whole files, so the recording is cut at each pause and each piece sent as it ends (oaLive).
@@ -28,9 +29,14 @@ type State = {
   since: number; // when recording started (ms)
   busy: string | null; // released: waiting for the last sentence (and its fix-up)
   live: { done: string; hyp: string }; // what streaming recognition heard so far: settled phrases, the one in progress
-  // where the finger slid: up = releasing drops the recording, right = releasing leaves it in the composer to edit;
-  // neither = releasing sends what's in the composer (once the last sentence is fixed up)
-  swipe: "" | "cancel" | "edit";
+  // where the finger slid: up = releasing drops the recording, right = releasing does the other of send / edit;
+  // neither = releasing does what sendOnRelease says
+  swipe: "" | "cancel" | "right";
+  // letting go sends (swipe right: into the composer to edit) instead of the other way round. Per device (g.storage),
+  // off by default: a phone wants it, a computer usually doesn't
+  sendOnRelease: boolean;
+  // released and being finished: whether it will be sent (the bubble says so)
+  sending: boolean;
   // where the press is: "spot" (the middle of the field, under the finger: the field makes room) or the bar's mic
   from: "spot" | "mic";
   // what holds it: a finger / the mouse on the mic, or a key held on a computer's keyboard (letting go of that one
@@ -48,7 +54,7 @@ type State = {
   // conversations whose 🔊 was tapped while the agent was still answering: their reply is read when the turn ends
   armed: string[];
 };
-let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", from: "mic", via: "touch", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
+let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", sendOnRelease: false, sending: false, from: "mic", via: "touch", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
 const subs = new Set<() => void>();
 const put = (p: Partial<State>) => {
   st = { ...st, ...p };
@@ -246,7 +252,7 @@ export default defineAddon({
     const isZh = zh.v;
     const inputOn = () => g.settings.get<boolean>("enableInput") !== false;
     const outputOn = () => g.settings.get<boolean>("enableOutput") !== false;
-    put({ auto: !!g.storage.get<boolean>("auto") });
+    put({ auto: !!g.storage.get<boolean>("auto"), sendOnRelease: !!g.storage.get<boolean>("sendOnRelease") });
 
     // Sound needs a tap to start it (Android's WebView: for each element it hasn't played). Turning auto read on is
     // one; after a reload it comes back on without one, so the first touch anywhere unlocks, and until then replies
@@ -799,9 +805,9 @@ export default defineAddon({
       const r = rec;
       const cancel = st.swipe === "cancel";
       // A held key never sends: the hands are on the keyboard, so reading it over and pressing Enter costs nothing
-      const edit = st.swipe === "edit" || (st.via === "key" && !cancel);
+      const edit = st.via === "key" || st.sendOnRelease === (st.swipe === "right");
       rec = null;
-      put({ recording: null, swipe: edit ? "edit" : "" }); // kept while it is fixed up: the bubble says whether it will send
+      put({ recording: null, swipe: "", sending: !cancel && !edit }); // the bubble says whether it will send
       if (!r) return;
       clearTimeout(r.cutoff);
       r.node.disconnect();
@@ -841,7 +847,7 @@ export default defineAddon({
           ? T("有句纠错没成功", "a fix-up failed")
           : T(`识别 ${heardIn} · 纠错 ${secsSince(tHeard)}`, `heard ${heardIn} · fixed ${secsSince(tHeard)}`);
       r.live?.close();
-      put({ busy: null, swipe: "", live: { done: "", hyp: "" } });
+      put({ busy: null, swipe: "", sending: false, live: { done: "", hyp: "" } });
       if (!text) {
         sendTrace("empty");
         dropLive();
@@ -888,7 +894,7 @@ export default defineAddon({
     }
 
     // The final text replaces what went in live (after what the composer held before the press), and is sent unless
-    // the finger slid right (edit: it stays in the composer)
+    // edit (it stays in the composer)
     function deliver(text: string, session: string, to: ComposerContext | null, edit: boolean): string {
       if (to && (liveBase === null || touched())) {
         // sent or edited while it was being fixed up: that wins
@@ -1368,7 +1374,7 @@ export default defineAddon({
       if (!st.recording) return;
       const dx = x - pressAt.x;
       const dy = pressAt.y - y;
-      const swipe = dy > 60 && dy >= dx ? "cancel" : dx > 60 ? "edit" : "";
+      const swipe = dy > 60 && dy >= dx ? "cancel" : dx > 60 ? "right" : "";
       if (swipe !== st.swipe) {
         const was = st.swipe;
         put({ swipe });
@@ -1380,7 +1386,7 @@ export default defineAddon({
     // The props that make an element a hold-to-talk surface: no scrolling, no text selection or callout, the
     // pointer kept until it lets go (wherever it went)
     const holdProps = (ctx: ComposerContext | undefined) => ({
-      // the phone's pager turns pages on a sideways swipe; this one is ours (swipe right = edit)
+      // the phone's pager turns pages on a sideways swipe; this one is ours (swipe right = send / edit)
       "data-no-swipe": "",
       style: { touchAction: "none", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" } as any,
       onContextMenu: (e: any) => e.preventDefault(),
@@ -1604,7 +1610,9 @@ export default defineAddon({
 
     const micAction = () => g.composerAction({
       id: "mic",
-      title: T("按住说话：松手发送，上滑取消，右滑放进输入框编辑", "Hold to talk: let go to send, slide up to cancel, right to edit it first"),
+      title: st.sendOnRelease
+        ? T("按住说话：松手发送，上滑取消，右滑放进输入框编辑", "Hold to talk: let go to send, slide up to cancel, right to edit it first")
+        : T("按住说话：松手放进输入框，上滑取消，右滑直接发送", "Hold to talk: let go to put it in the composer, slide up to cancel, right to send"),
       place: "start",
       // render gives each composer its own ctx; icon is for a Gerdr without render, where the click's run says
       render: (ctx) => <Mic ctx={ctx} />,
@@ -1851,7 +1859,7 @@ export default defineAddon({
                       className={g.ui.cn(
                         "transition-[color,opacity] duration-150",
                         s.swipe === "cancel" && "text-bad",
-                        s.swipe === "edit" && "opacity-30",
+                        s.swipe === "right" && "opacity-30",
                       )}
                     >
                       {T("上滑取消", "Up: cancel")}
@@ -1859,11 +1867,11 @@ export default defineAddon({
                     <span
                       className={g.ui.cn(
                         "transition-[color,opacity] duration-150",
-                        s.swipe === "edit" && "text-brand",
+                        s.swipe === "right" && "text-brand",
                         s.swipe === "cancel" && "opacity-30",
                       )}
                     >
-                      {T("右滑编辑", "Right: edit")}
+                      {s.sendOnRelease ? T("右滑编辑", "Right: edit") : T("右滑发送", "Right: send")}
                     </span>
                   </span>
                   )}
@@ -1872,10 +1880,10 @@ export default defineAddon({
                 <>
                   <I.LoaderCircle className="size-3 animate-spin" />
                   {fixing
-                    ? s.swipe === "edit"
+                    ? !s.sending
                       ? T("最后一句纠错中…", "Fixing the last sentence…")
                       : T("最后一句纠错后发送…", "Fixing the last sentence, then sending…")
-                    : s.swipe === "edit"
+                    : !s.sending
                       ? T("识别中…", "Recognizing…")
                       : T("识别完就发送…", "Recognizing, then sending…")}
                 </>
@@ -1977,6 +1985,39 @@ export default defineAddon({
       );
     }
 
+    // Send on release: this device's own choice (g.storage), not an addon.json setting, which is the same on every
+    // device. A phone wants it on (one hand, no keyboard to press Enter on), a computer off.
+    function SendOnRelease() {
+      const s = useSt();
+      return (
+        <div className="text-[12px]">
+          <label className="flex items-center gap-2">
+            <span className="min-w-0 flex-1">{T("松手就发送（这台设备）", "Send on release (this device)")}</span>
+            <g.ui.Switch
+              checked={s.sendOnRelease}
+              onCheckedChange={(v) => {
+                g.storage.set("sendOnRelease", v);
+                put({ sendOnRelease: v });
+                // the mic's tooltip says what letting go does: put it back with the new words
+                const h = halves[0];
+                if (h.offs.length && !st.recording && !st.busy) {
+                  h.offs.forEach((f) => f());
+                  h.offs = [];
+                  syncHalves();
+                }
+              }}
+            />
+          </label>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {T(
+              "开：松手直接发出去，右滑放进输入框编辑。关（默认）：松手放进输入框，右滑直接发送。只管这台设备，手机上开、电脑上关互不影响。键盘按住说话总是放进输入框。",
+              "On: letting go sends it, swipe right puts it in the composer to edit. Off (default): letting go puts it in the composer, swipe right sends. Only this device, so the phone and the computer can differ. Holding a key always puts it in the composer.",
+            )}
+          </div>
+        </div>
+      );
+    }
+
     // azureVoice used to be a text field: a name typed there that isn't one of the select's options now goes to the
     // "custom" name field, so it keeps being used and the select shows "Custom…" instead of nothing
     {
@@ -2003,6 +2044,7 @@ export default defineAddon({
               {(oaInInput ? [...oaConn, "oaAsrModel"] : ["doubaoKey", "doubaoAppId"]).map((k) => (
                 <Field key={k} name={k} />
               ))}
+              <SendOnRelease />
               <ModelPick value={(values.fixModel as string) ?? ""} set={(v) => set("fixModel", v)} />
               <Field name="words" />
               {g.ui.Shortcut && (
