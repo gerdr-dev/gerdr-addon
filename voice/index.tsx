@@ -30,11 +30,14 @@ type State = {
   busy: string | null; // released: waiting for the last sentence (and its fix-up)
   live: { done: string; hyp: string }; // what streaming recognition heard so far: settled phrases, the one in progress
   // where the finger slid: up = releasing drops the recording, right = releasing does the other of send / edit;
-  // neither = releasing does what sendOnRelease says
+  // neither = releasing does what sendOnRelease / sendOnReleaseSpot says
   swipe: "" | "cancel" | "right";
   // letting go sends (swipe right: into the composer to edit) instead of the other way round. Per device (g.storage),
-  // off by default: a phone wants it, a computer usually doesn't
+  // off by default: a phone wants it, a computer usually doesn't. One for the bar's mic, one for the "hold to talk"
+  // spot in the middle of an empty field (phones only): that one is for a quick message, sent; the mic, also there
+  // when the field already holds text, for adding to it and editing
   sendOnRelease: boolean;
+  sendOnReleaseSpot: boolean;
   // released and being finished: whether it will be sent (the bubble says so)
   sending: boolean;
   // where the press is: "spot" (the middle of the field, under the finger: the field makes room) or the bar's mic
@@ -54,8 +57,10 @@ type State = {
   // conversations whose 🔊 was tapped while the agent was still answering: their reply is read when the turn ends
   armed: string[];
 };
-let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", sendOnRelease: false, sending: false, from: "mic", via: "touch", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
+let st: State = { auto: false, recording: null, since: 0, busy: null, live: { done: "", hyp: "" }, swipe: "", sendOnRelease: false, sendOnReleaseSpot: false, sending: false, from: "mic", via: "touch", anchorEl: null, note: null, queue: [], playing: null, last: null, needTap: false, armed: [] };
 const subs = new Set<() => void>();
+/** Whether letting go of this press sends, by where it was pressed (each has its own switch). */
+const sendsOnRelease = (s: State) => (s.from === "spot" ? s.sendOnReleaseSpot : s.sendOnRelease);
 const put = (p: Partial<State>) => {
   st = { ...st, ...p };
   subs.forEach((f) => f());
@@ -252,7 +257,12 @@ export default defineAddon({
     const isZh = zh.v;
     const inputOn = () => g.settings.get<boolean>("enableInput") !== false;
     const outputOn = () => g.settings.get<boolean>("enableOutput") !== false;
-    put({ auto: !!g.storage.get<boolean>("auto"), sendOnRelease: !!g.storage.get<boolean>("sendOnRelease") });
+    // The spot's switch came after the mic's (0.6.6): until it's set it follows the mic's, so a phone that had it on keeps sending
+    put({
+      auto: !!g.storage.get<boolean>("auto"),
+      sendOnRelease: !!g.storage.get<boolean>("sendOnRelease"),
+      sendOnReleaseSpot: !!(g.storage.get<boolean>("sendOnReleaseSpot") ?? g.storage.get<boolean>("sendOnRelease")),
+    });
 
     // Sound needs a tap to start it (Android's WebView: for each element it hasn't played). Turning auto read on is
     // one; after a reload it comes back on without one, so the first touch anywhere unlocks, and until then replies
@@ -805,7 +815,7 @@ export default defineAddon({
       const r = rec;
       const cancel = st.swipe === "cancel";
       // A held key never sends: the hands are on the keyboard, so reading it over and pressing Enter costs nothing
-      const edit = st.via === "key" || st.sendOnRelease === (st.swipe === "right");
+      const edit = st.via === "key" || sendsOnRelease(st) === (st.swipe === "right");
       rec = null;
       put({ recording: null, swipe: "", sending: !cancel && !edit }); // the bubble says whether it will send
       if (!r) return;
@@ -1871,7 +1881,7 @@ export default defineAddon({
                         s.swipe === "cancel" && "opacity-30",
                       )}
                     >
-                      {s.sendOnRelease ? T("右滑编辑", "Right: edit") : T("右滑发送", "Right: send")}
+                      {sendsOnRelease(s) ? T("右滑编辑", "Right: edit") : T("右滑发送", "Right: send")}
                     </span>
                   </span>
                   )}
@@ -1989,29 +1999,36 @@ export default defineAddon({
     // device. A phone wants it on (one hand, no keyboard to press Enter on), a computer off.
     function SendOnRelease() {
       const s = useSt();
+      // The spot is drawn only on touch screens (see halves), so its switch is too
+      const touch = matchMedia("(pointer: coarse)").matches;
+      const row = (title: string, on: boolean, set: (v: boolean) => void) => (
+        <label className="flex items-center gap-2">
+          <span className="min-w-0 flex-1">{title}</span>
+          <g.ui.Switch checked={on} onCheckedChange={set} />
+        </label>
+      );
       return (
-        <div className="text-[12px]">
-          <label className="flex items-center gap-2">
-            <span className="min-w-0 flex-1">{T("松手就发送（这台设备）", "Send on release (this device)")}</span>
-            <g.ui.Switch
-              checked={s.sendOnRelease}
-              onCheckedChange={(v) => {
-                g.storage.set("sendOnRelease", v);
-                put({ sendOnRelease: v });
-                // the mic's tooltip says what letting go does: put it back with the new words
-                const h = halves[0];
-                if (h.offs.length && !st.recording && !st.busy) {
-                  h.offs.forEach((f) => f());
-                  h.offs = [];
-                  syncHalves();
-                }
-              }}
-            />
-          </label>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="space-y-1 text-[12px]">
+          {touch &&
+            row(T("中间「按住说话」松手就发送", "\"Hold to talk\" in the field: send on release"), s.sendOnReleaseSpot, (v) => {
+              g.storage.set("sendOnReleaseSpot", v);
+              put({ sendOnReleaseSpot: v });
+            })}
+          {row(T("🎤 松手就发送", "🎤: send on release"), s.sendOnRelease, (v) => {
+            g.storage.set("sendOnRelease", v);
+            put({ sendOnRelease: v });
+            // the mic's tooltip says what letting go does: put it back with the new words
+            const h = halves[0];
+            if (h.offs.length && !st.recording && !st.busy) {
+              h.offs.forEach((f) => f());
+              h.offs = [];
+              syncHalves();
+            }
+          })}
+          <div className="text-[11px] text-muted-foreground">
             {T(
-              "开：松手直接发出去，右滑放进输入框编辑。关（默认）：松手放进输入框，右滑直接发送。只管这台设备，手机上开、电脑上关互不影响。键盘按住说话总是放进输入框。",
-              "On: letting go sends it, swipe right puts it in the composer to edit. Off (default): letting go puts it in the composer, swipe right sends. Only this device, so the phone and the computer can differ. Holding a key always puts it in the composer.",
+              "开：松手直接发出去，右滑放进输入框编辑。关（默认）：松手放进输入框，右滑直接发送。只管这台设备，手机和电脑可以不一样。中间的「按住说话」只在手机上、输入框空着时出现，适合说一句就发。键盘按住说话总是放进输入框。",
+              "On: letting go sends it, swipe right puts it in the composer to edit. Off (default): letting go puts it in the composer, swipe right sends. Only this device, so the phone and the computer can differ. \"Hold to talk\" in the field shows on phones while the field is empty: good for a quick message. Holding a key always puts it in the composer.",
             )}
           </div>
         </div>
