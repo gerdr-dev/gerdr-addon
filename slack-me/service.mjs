@@ -1,4 +1,5 @@
-// Messages people send *you* on Slack (direct messages, optionally @-mentions) → Gerdr events, and replies → Slack, as
+// Messages people send *you* on Slack (direct messages, optionally @-mentions and everything said in small channels)
+// → Gerdr events, and replies → Slack, as
 // you. No Slack app: it uses the session the Slack desktop app is signed in with, which slackctl imports
 // (`slackctl auth import-desktop` → ~/.config/agent-slack/credentials.json: an xoxc token plus the d cookie).
 //
@@ -45,7 +46,8 @@ let backoff = 1000;
 let reconnectTimer = null;
 let lastImport = 0;
 const names = new Map(); // user id → display name
-const kinds = new Map(); // channel id → "im" | "mpim" | "channel"
+const kinds = new Map(); // channel id → { kind: "im" | "mpim" | "channel", members?, at }
+const KIND_TTL = 3600_000; // people join and leave channels: a channel's size is asked again after this
 
 // ---- slackctl ----
 
@@ -145,18 +147,27 @@ async function readable(text) {
   return (text ?? "").replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => `@${got.get(id) ?? id}`);
 }
 
-// listen only flags D… DMs; a group DM it lets through (or a channel @-mention) is told apart here, asked once per channel.
+// listen only flags D… DMs; a group DM it lets through (or a channel message) is told apart here, with the channel's
+// member count (you included) for smallChannel. Asked once per channel an hour.
 async function kindOf(channel) {
-  if (channel.startsWith("D")) return "im";
-  if (kinds.has(channel)) return kinds.get(channel);
-  let k = "channel";
+  if (channel.startsWith("D")) return { kind: "im" };
+  const had = kinds.get(channel);
+  if (had && Date.now() - had.at < KIND_TTL) return had;
+  let k = { kind: "channel", at: Date.now() };
   try {
-    const j = await api("conversations.info", { channel });
-    k = j.channel?.is_im ? "im" : j.channel?.is_mpim ? "mpim" : "channel";
-  } catch {}
+    const j = await api("conversations.info", { channel, include_num_members: "true" });
+    k = { kind: j.channel?.is_im ? "im" : j.channel?.is_mpim ? "mpim" : "channel", members: j.channel?.num_members, at: Date.now() };
+  } catch (e) {
+    // Not cached for long: a failed lookup must not make a small channel's messages vanish for an hour
+    log("conversations.info failed", channel, e.message);
+    k.at = Date.now() - KIND_TTL + 60_000;
+  }
   kinds.set(channel, k);
   return k;
 }
+
+/** smallChannel: a channel with at most this many members (you included) is heard in full; 0 = off. */
+const smallMax = (st = settings) => Math.max(0, Math.floor(Number(st.smallChannel) || 0));
 
 // ---- the connection: `slackctl listen` ----
 
@@ -202,7 +213,12 @@ async function connect() {
 
   // DMs, group DMs and @-mentions only, no bots: listen drops the rest of the workspace's traffic itself. It keeps the
   // socket alive and reconnects on its own; it exits only when it can't go on (sign-in rejected, Slack refusing).
-  const p = spawn(bin, ["listen", "--workspace", ws_.url, "--mentions-or-dms", "--include-bots=false"], { stdio: ["ignore", "pipe", "pipe"] });
+  // With smallChannel on, every channel message has to come through and onMessage sorts them by the channel's size.
+  // That costs nothing on Slack's side: the socket carries all of your channels either way and slackctl filters
+  // locally (internal/listen/event.go), so only this process parses more lines.
+  const args = ["listen", "--workspace", ws_.url, "--include-bots=false"];
+  if (!smallMax()) args.push("--mentions-or-dms");
+  const p = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
   proc = p;
   let ended = ""; // "auth" | "refused": the last control line before it exits
   let lastErr = "";
@@ -275,8 +291,8 @@ const allowList = () =>
 // A listen line: { type: "message", subtype?, channel, ts, thread_ts?, user, bot_id?, text, from_self, is_mention, is_dm }.
 // It has no files and cuts text at 2000 characters, so every message is read again in full. Nothing in the line says
 // whether files came with it: Slack's current uploads carry no file_share subtype, so "@a @b + a screenshot" arrived as
-// just "@a @b" while only image-only messages (empty text) got their files. Only DMs and @-mentions get here, so one
-// conversations.history call each is nothing next to the rate limit.
+// just "@a @b" while only image-only messages (empty text) got their files. Only DMs, @-mentions and small channels'
+// messages get this far, so one conversations.history call each is nothing next to the rate limit.
 
 async function onMessage(ev) {
   // listen already drops edits, deletions, joins…; files, thread broadcasts and /me are someone saying something
@@ -286,13 +302,19 @@ async function onMessage(ev) {
   const allow = allowList();
   if (allow.length && !allow.includes(ev.user)) return;
 
-  const ck = ev.is_dm ? "im" : await kindOf(ev.channel);
+  const info = ev.is_dm ? { kind: "im" } : await kindOf(ev.channel);
+  const ck = info.kind;
+  const small = ck === "channel" && smallMax() > 0 && info.members > 0 && info.members <= smallMax();
   let kind;
   if (ck === "im") kind = "direct";
   else if (ck === "mpim") {
     if (settings.groupDMs === false) return;
     kind = "direct";
   } else if (settings.mentions && ev.is_mention) kind = "mention";
+  // A channel of a few people is talk among them, you included, like a group DM: a colleague's answer there comes
+  // without a thread or an @ (2026-11-23: an agent waiting for one couldn't, as nothing but @-mentions came in). Its
+  // own kind, so a panel that starts work on every DM doesn't on every word said here; following one still works.
+  else if (small) kind = "channel";
   else return;
 
   const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
@@ -300,8 +322,11 @@ async function onMessage(ev) {
   const raw = ev.text ?? "";
   const text = await readable(raw);
 
-  // Replies go in the message's thread, except a DM's top level, which is a conversation already
-  const threadTs = ev.thread_ts || (kind === "direct" ? undefined : ev.ts);
+  // Replies go in the message's thread, except a DM's or a small channel's top level, which is a conversation already.
+  // An @-mention in a small channel too: keyed apart, a colleague's un-@'d answer right under it would be another
+  // conversation, and a task following the mention would never hear it.
+  const whole = kind === "direct" || small;
+  const threadTs = ev.thread_ts || (whole ? undefined : ev.ts);
   const who = await nameOf(ev.user);
   const files = await download(ev);
   // What was said just before, yours included (only others' messages become events): a reply like "新版没用" means
@@ -312,8 +337,9 @@ async function onMessage(ev) {
     event: {
       id: `slack-me:${ev.channel}:${ev.ts}`,
       kind,
-      // The conversation: a DM (or group DM) is one, its threads each another; in a channel, the thread
-      key: kind === "direct" && !ev.thread_ts ? ev.channel : `${ev.channel}/${threadTs}`,
+      // The conversation: a DM, group DM or small channel is one, its threads each another; in a channel you're
+      // @-mentioned in, the thread
+      key: whole && !ev.thread_ts ? ev.channel : `${ev.channel}/${threadTs}`,
       actor: ev.user,
       title: `${who}: ${text.split("\n")[0].slice(0, 80)}`,
       text: text + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
@@ -432,7 +458,8 @@ rl.on("line", (line) => {
     const first = !gotSettings;
     gotSettings = true;
     settings = m.settings ?? {};
-    if (first || prev.workspace !== settings.workspace || prev.slackctl !== settings.slackctl) {
+    // smallChannel decides listen's flags (on: every channel message has to come through)
+    if (first || prev.workspace !== settings.workspace || prev.slackctl !== settings.slackctl || !smallMax() !== !smallMax(prev)) {
       stopListen();
       backoff = 1000;
       connect();

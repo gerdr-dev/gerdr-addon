@@ -26,7 +26,13 @@
 | source/kind | 什么时候 | key |
 |---|---|---|
 | `slack-me/direct` | 有人私聊你（几个人的群私聊也算，设置里可关） | 私聊频道 id；thread 里是 `频道/thread_ts` |
-| `slack-me/mention` | 频道里有人 @ 你（设置里打开才有） | `频道/thread_ts` |
+| `slack-me/mention` | 频道里有人 @ 你（设置里打开才有） | `频道/thread_ts`；小频道里同下 |
+| `slack-me/channel` | 小频道里有人说话，不用 @ 你（设置「小频道全收」填了人数才有） | 频道 id；thread 里是 `频道/thread_ts` |
+
+小频道：人数（含你）不超过「小频道全收」那个数的频道。几个人的频道多半就是在跟你说话，只是不 @ 你、也不开 thread ——
+只收 @ 的话，同事接着回的那句永远进不来，等他回话的 agent 也就永远等不到。所以它的顶层像群私聊一样是一个对话（key 是频道 id），
+里面 @ 你的那条也一样，这样跟着那条 @ 的任务能听到同事在底下没 @ 的回话。单独一个 kind，是因为面板通常对每条私聊开工作，
+小频道里每句话都开就太吵了；不在触发器里开它，面板的「等回复」照样能跟住某个小频道。
 
 你自己发的、bot 发的不算。`actor` 是发消息的人的 member ID，`data`：`{ channel, channelType, user, userName, ts, threadTs, text, files, workspace }`。
 事件的 `text` / `title` 和 `data.context` 里，`<@U…>` 换成了 `@人名`；`data.text` 是 Slack 的原文，ID 还在。
@@ -46,7 +52,9 @@ ctx.events.reply(e, "收到，晚点看");   // 以你本人的身份贴回那�
 
 ## 怎么做到的
 
-收消息是 `slackctl listen --mentions-or-dms --include-bots=false`：slackctl 用同一份登录连 Slack 的实时连接（`rtm.connect`，桌面版用的那个），
+收消息是 `slackctl listen --mentions-or-dms --include-bots=false`（开了「小频道全收」就去掉 `--mentions-or-dms`，
+所有频道消息都过来，插件按频道人数筛；实时连接本来就推你所在的所有频道，slackctl 是在本地筛的，所以不多调 Slack 接口。
+频道人数用 `conversations.info` 查，每个频道一小时查一次）：slackctl 用同一份登录连 Slack 的实时连接（`rtm.connect`，桌面版用的那个），
 保活、断线重连都是它做的，插件只读它输出的 JSON 行、再按设置筛（群私聊、@ 我、只收谁）。
 listen 的输出不带附件、正文最多 2000 字，也看不出消息带没带附件，所以每条消息插件都会用同一份登录再取一次完整的。
 listen 因为登录失效退出时，插件重新从桌面版导入登录再拉起来。

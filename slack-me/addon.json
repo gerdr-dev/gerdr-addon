@@ -1,6 +1,6 @@
 {
   "name": "Slack 私聊（我的账号）",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "收别人发给你本人的 Slack 私聊，变成 Gerdr 事件；回复以你本人的身份发出。不用建 app，用你在 Slack 桌面版的登录（要装 slackctl）。",
   "icon": "icon.svg",
   "service": {
@@ -19,6 +19,12 @@
       "kind": "mention",
       "title": "Slack 频道里 @ 了我",
       "description": "频道里有人 @ 你（要在设置里打开）",
+      "reply": "slack-me.send"
+    },
+    {
+      "kind": "channel",
+      "title": "Slack 小频道里有人说话",
+      "description": "人数不超过设置里「小频道全收」的频道，谁说的都算，不用 @ 你（要在设置里打开）",
       "reply": "slack-me.send"
     }
   ],
@@ -43,6 +49,16 @@
       "type": "boolean",
       "default": false,
       "description": "频道里 @ 你的消息发成 slack-me/mention。"
+    },
+    {
+      "key": "smallChannel",
+      "title": "小频道全收",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 50,
+      "unit": "人",
+      "description": "人数（含你）不超过这个数的频道，里面所有人说的话都收，发成 slack-me/channel，不用 @ 你；顶层是一个对话（key 是频道 id），像群私聊。0 = 不收。"
     },
     {
       "key": "allow",
@@ -80,6 +96,11 @@
         },
         "groupDMs": { "title": "Group DMs too", "description": "Multi-person DMs (not channels) also become slack-me/direct." },
         "mentions": { "title": "@-mentions in channels", "description": "Channel messages that @-mention you become slack-me/mention." },
+        "smallChannel": {
+          "title": "Small channels in full",
+          "unit": "people",
+          "description": "In a channel of at most this many members (you included), everything anyone says becomes slack-me/channel, no @ needed; its top level is one conversation (key: the channel id), like a group DM. 0 = off."
+        },
         "allow": { "title": "Only from these people", "description": "Slack user IDs (U0XXXX), comma separated. Empty = everyone." },
         "maxFileMB": { "title": "Attachment size limit", "unit": "MB", "description": "Images and files are downloaded and their paths put in the event. 0 = don't." },
         "slackctl": { "title": "slackctl path", "description": "Empty = look on PATH, ~/go/bin and /opt/homebrew/bin." }
