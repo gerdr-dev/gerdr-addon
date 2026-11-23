@@ -788,7 +788,7 @@ export default defineAddon({
           // A toast, not the bubble's note: it's not about this recording but the App, and has to outlive the press
           if (macApp && r.peak === 0 && !r.silentTold && r.samples >= 16000) {
             r.silentTold = true;
-            g.notify(silentMic(), { level: "error" });
+            g.notify(silentMic(), { level: "error", sticky: true, id: "voice-silent-mic" });
           }
           if (r.live) r.live.push(pcm);
           else r.buf.push(pcm);
@@ -890,7 +890,7 @@ export default defineAddon({
         sendTrace(silent ? "silent" : `empty(peak=${r.peak.toFixed(4)})`);
         dropLive();
         if (silent) {
-          if (!r.silentTold) g.notify(silentMic(), { level: "error" });
+          if (!r.silentTold) g.notify(silentMic(), { level: "error", sticky: true, id: "voice-silent-mic" });
           return;
         }
         return note(asrErr || T("没听清，再说一次？", "Didn't catch that. Again?"), !!asrErr);
