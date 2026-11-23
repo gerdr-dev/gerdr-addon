@@ -1,6 +1,6 @@
 {
   "name": "语音",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "按住 🎤（电脑上按住右 Option / 右 Alt）说话（豆包，或硅基流动 / OpenAI 兼容接口识别，边说边进输入框），文字进输入框；点喇叭听回复（豆包、小米 MiMo、Azure、硅基流动 / OpenAI 兼容任选），长按输入框旁的 🔊 打开自动朗读：agent 做完就念，几个并行时排队、不重复。输入和朗读各有开关。",
   "icon": "icon.svg",
   "screenshots": [],

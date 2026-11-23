@@ -348,6 +348,7 @@ export default defineAddon({
       node: ScriptProcessorNode;
       level: AnalyserNode; // the mic's loudness, read by the bubble's waveform
       samples: number; // how much was recorded (16 kHz)
+      peak: number; // the loudest raw sample so far: 0 all through means the system handed over silence, not a quiet room
       live: Live | null; // null until the recognizer's socket is set up
       buf: Int16Array[]; // recorded before that, handed over then
       ending: boolean; // released before the recognizer was ready: end it once it is
@@ -715,6 +716,23 @@ export default defineAddon({
       }).catch(() => {});
     };
 
+    // A real mic never gives exact zeros for a whole recording, even in a quiet room (its noise floor is ~-60 dB). On
+    // the Mac App it happens when the App's bundle was replaced while it ran (make install, an update copied in by
+    // hand): macOS can't trace the running audio process back to an app any more (tccd: "failed to construct a process
+    // for the responsible audit token"), treats it as having no mic permission and feeds it silence, without an error.
+    // Only reopening the App fixes it. Seen elsewhere this means the mic is held or muted by something else.
+    const macApp = !!(window as any).gerdrNative && /Mac/.test(navigator.platform);
+    const silentMic = () =>
+      macApp
+        ? T(
+            "麦克风只送来了静音：这个 Gerdr App 开着的时候被换成了新版本（比如 make install），macOS 不再给它声音。⌘Q 退出 App 再打开就好",
+            "The mic gives only silence: this Gerdr App was replaced by a new version while open (e.g. make install), and macOS stops giving it sound. Quit it (⌘Q) and open it again",
+          )
+        : T(
+            "麦克风只送来了静音：看看是不是被别的程序占着、被静音了，或在系统设置里换个输入设备",
+            "The mic gives only silence: check whether another app holds it, it's muted, or pick another input device in the system settings",
+          );
+
     async function startRecording() {
       if (rec || st.busy) return;
       // You're talking: the reading stops, all of it. g.audio.stop() alone ended only the clip sounding: play() went on
@@ -758,11 +776,15 @@ export default defineAddon({
         const ended = new Promise<void>((ok) => (finish = ok));
         const level = ctx.createAnalyser();
         level.fftSize = 1024;
-        const r: Rec = { stream, ctx, node, level, samples: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
+        const r: Rec = { stream, ctx, node, level, samples: 0, peak: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
         rec = r;
         node.onaudioprocess = (e) => {
-          const pcm = to16k(e.inputBuffer.getChannelData(0), ctx.sampleRate);
+          const f = e.inputBuffer.getChannelData(0);
+          for (let i = 0; i < f.length; i++) if (Math.abs(f[i]) > r.peak) r.peak = Math.abs(f[i]);
+          const pcm = to16k(f, ctx.sampleRate);
           r.samples += pcm.length;
+          // On the Mac App the cause is known (see silentMic) and certain, so say it while you talk instead of after
+          if (macApp && r.peak === 0 && r.samples >= 16000 && r.samples - pcm.length < 16000) asrFail(silentMic());
           if (r.live) r.live.push(pcm);
           else r.buf.push(pcm);
         };
@@ -859,8 +881,10 @@ export default defineAddon({
       r.live?.close();
       put({ busy: null, swipe: "", sending: false, live: { done: "", hyp: "" } });
       if (!text) {
-        sendTrace("empty");
+        const silent = r.peak === 0;
+        sendTrace(silent ? "silent" : `empty(peak=${r.peak.toFixed(4)})`);
         dropLive();
+        if (silent) return note(silentMic(), true);
         return note(asrErr || T("没听清，再说一次？", "Didn't catch that. Again?"), !!asrErr);
       }
       sendTrace(deliver(text, session, to, edit));
