@@ -1,0 +1,81 @@
+{
+  "name": "Meegle（飞书项目）",
+  "version": "0.1.0",
+  "description": "Meegle 上新到你手里的待办（指派给你的缺陷、轮到你的需求节点）和这些工作项下别人的新评论，变成 Gerdr 事件；回复以你本人的身份发成评论。用 meegle 命令行的登录（npm i -g @lark-project/meegle，再 meegle auth login）。",
+  "icon": "icon.svg",
+  "service": {
+    "command": "node",
+    "args": [
+      "service.mjs"
+    ],
+    "events": [
+      "*/meegle.comment"
+    ]
+  },
+  "emits": [
+    {
+      "kind": "todo",
+      "title": "Meegle 新待办",
+      "description": "新到你手里的待办：指派给你的缺陷、轮到你的需求节点 / 子任务（重新打开的也算）",
+      "reply": "meegle.comment"
+    },
+    {
+      "kind": "comment",
+      "title": "Meegle 新评论",
+      "description": "你的待办工作项下别人发的新评论（离开待办 7 天内的也算）",
+      "reply": "meegle.comment"
+    },
+    {
+      "kind": "login",
+      "title": "Meegle 登录失效",
+      "description": "meegle 命令行的登录过期了，要你在终端跑 meegle auth login"
+    }
+  ],
+  "settings": [
+    {
+      "key": "interval",
+      "title": "多久查一次",
+      "type": "number",
+      "default": 5,
+      "min": 1,
+      "max": 120,
+      "unit": "分钟",
+      "description": "每次查一遍待办列表，再查这些工作项的评论（每个工作项一次请求）。"
+    },
+    {
+      "key": "comments",
+      "title": "评论也收",
+      "type": "boolean",
+      "default": true,
+      "description": "待办工作项下别人的新评论发成 meegle/comment。"
+    },
+    {
+      "key": "meegle",
+      "title": "meegle 路径",
+      "type": "string",
+      "default": "",
+      "description": "空着 = 在 PATH、/opt/homebrew/bin、/usr/local/bin 和 version-fox / nvm 装的 node 里找。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Meegle (Lark Project)",
+      "description": "New to-dos that reach you on Meegle (defects assigned to you, requirement nodes that are your turn) and others' new comments on those work items become Gerdr events; replies are posted as comments, as you. Uses the meegle CLI's sign-in (npm i -g @lark-project/meegle, then meegle auth login).",
+      "settings": {
+        "interval": {
+          "title": "Check every",
+          "unit": "min",
+          "description": "Each check reads the to-do list, then each work item's comments (one request per item)."
+        },
+        "comments": {
+          "title": "Comments too",
+          "description": "Others' new comments on to-do work items become meegle/comment."
+        },
+        "meegle": {
+          "title": "meegle path",
+          "description": "Empty = look on PATH, /opt/homebrew/bin, /usr/local/bin and in version-fox / nvm node installs."
+        }
+      }
+    }
+  }
+}
