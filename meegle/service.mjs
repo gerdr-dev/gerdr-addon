@@ -68,19 +68,42 @@ async function meeglePath() {
 class AuthError extends Error {}
 let bin = "";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Meegle limits a tenant to a few calls a second per interface (`RateLimit … qps: 5`), shared with everyone's agents:
+// wait and ask again rather than lose the poll
 async function meegle(args) {
+  for (let i = 0; ; i++) {
+    try {
+      return await meegleOnce(args);
+    } catch (e) {
+      if (i >= 3 || !/RateLimit|rate limit/i.test(e.message)) throw e;
+      await sleep(1500 * 2 ** i);
+    }
+  }
+}
+
+async function meegleOnce(args) {
   if (!bin) bin = await meeglePath();
   if (!bin) throw new Error(T("找不到 meegle（npm i -g @lark-project/meegle）", "meegle not found (npm i -g @lark-project/meegle)"));
   const env = { ...process.env, PATH: [path.dirname(bin), path.dirname(process.execPath), process.env.PATH].join(":") };
   return new Promise((resolve, reject) =>
     execFile(bin, args, { timeout: 90_000, maxBuffer: 20 << 20, env }, (err, stdout, stderr) => {
+      // A failure's {"error": …} comes on stderr
       let j = null;
-      try {
-        j = JSON.parse(stdout);
-      } catch {}
+      for (const text of [stdout, stderr]) {
+        try {
+          j = JSON.parse(text);
+          break;
+        } catch {}
+      }
+      // `auth status` answers {"authenticated": false} with exit code 1: that is an answer, not a failure
+      if (j && args[0] === "auth") return resolve(j);
       if (!err && j && !j.error) return resolve(j);
-      const msg = j?.error?.message || (stderr || err?.message || "").trim().split("\n").pop() || "failed";
-      const E = /not logged in|unauthori|login|token.*(expire|invalid)|401/i.test(msg + (stderr || "")) ? AuthError : Error;
+      const said = (stderr || stdout || err?.message || "").trim().split("\n").pop();
+      const msg = j?.error?.message || said || "failed";
+      // Signed out, the CLI hides every command but the basic ones: `unknown command "mywork"`, with exit code 0
+      const E = /not logged in|unauthori|login|token.*(expire|invalid)|401|unknown command/i.test(msg + (stderr || "")) ? AuthError : Error;
       reject(new E(`meegle ${args.slice(0, 2).join(" ")}: ${msg}`));
     }),
   );
@@ -250,6 +273,7 @@ async function poll() {
     if (settings.comments !== false) {
       for (const [wid, s] of Object.entries(state.items)) {
         if (stopping) break;
+        await sleep(300);
         let cs;
         try {
           cs = await comments(s.project, wid);

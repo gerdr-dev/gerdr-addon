@@ -1,6 +1,6 @@
 {
   "name": "Meegle（飞书项目）",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Meegle 上新到你手里的待办（指派给你的缺陷、轮到你的需求节点）和这些工作项下别人的新评论，变成 Gerdr 事件；回复以你本人的身份发成评论。用 meegle 命令行的登录（npm i -g @lark-project/meegle，再 meegle auth login）。",
   "icon": "icon.svg",
   "service": {
