@@ -34,7 +34,8 @@
 里面 @ 你的那条也一样，这样跟着那条 @ 的任务能听到同事在底下没 @ 的回话。单独一个 kind，是因为面板通常对每条私聊开工作，
 小频道里每句话都开就太吵了；不在触发器里开它，面板的「等回复」照样能跟住某个小频道。
 
-你自己发的、bot 发的不算。`actor` 是发消息的人的 member ID，`data`：`{ channel, channelType, user, userName, ts, threadTs, text, files, workspace }`。
+你自己发的、bot 发的不算。`actor` 是发消息的人的 member ID，`data`：`{ channel, channelType, place, user, userName, ts, threadTs, text, files, workspace }`。
+`place` 是这段对话在哪、给人看的：`私聊`、`群私聊`、`#频道名 的消息列`、`#频道名`（小频道顶层），显示回复发去哪时用它，别只写对方名字 —— 「回给 某人」会被当成私聊。
 事件的 `text` / `title` 和 `data.context` 里，`<@U…>` 换成了 `@人名`；`data.text` 是 Slack 的原文，ID 还在。
 
 故意没叫 `dm`：`dm` 在 Gerdr 里的意思是「我自己发给我的 bot 的私信」，[在聊天里审批](../remote-answer) 这类插件会往最近一条 `dm` 的对话里发审批、把回复当成你的答复。

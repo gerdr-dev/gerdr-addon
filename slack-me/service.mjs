@@ -46,7 +46,7 @@ let backoff = 1000;
 let reconnectTimer = null;
 let lastImport = 0;
 const names = new Map(); // user id → display name
-const kinds = new Map(); // channel id → { kind: "im" | "mpim" | "channel", members?, at }
+const kinds = new Map(); // channel id → { kind: "im" | "mpim" | "channel", members?, name?, at }
 const KIND_TTL = 3600_000; // people join and leave channels: a channel's size is asked again after this
 
 // ---- slackctl ----
@@ -156,7 +156,7 @@ async function kindOf(channel) {
   let k = { kind: "channel", at: Date.now() };
   try {
     const j = await api("conversations.info", { channel, include_num_members: "true" });
-    k = { kind: j.channel?.is_im ? "im" : j.channel?.is_mpim ? "mpim" : "channel", members: j.channel?.num_members, at: Date.now() };
+    k = { kind: j.channel?.is_im ? "im" : j.channel?.is_mpim ? "mpim" : "channel", members: j.channel?.num_members, name: j.channel?.name, at: Date.now() };
   } catch (e) {
     // Not cached for long: a failed lookup must not make a small channel's messages vanish for an hour
     log("conversations.info failed", channel, e.message);
@@ -331,6 +331,10 @@ async function onMessage(ev) {
   const files = await download(ev);
   // What was said just before, yours included (only others' messages become events): a reply like "新版没用" means
   // nothing to whoever reads it without the question it answers
+  // Where it was said, in words, for whoever shows an answer going back: "回给 乔巴" read as a DM when it went to a
+  // channel's thread (2026-11-23)
+  const chan = info.name ? `#${info.name}` : "频道";
+  const place = ck === "im" ? "私聊" : ck === "mpim" ? "群私聊" : threadTs ? `${chan} 的消息列` : chan;
   const context = await before(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch context failed", e.message), []));
   out({
     type: "event",
@@ -344,7 +348,7 @@ async function onMessage(ev) {
       title: `${who}: ${text.split("\n")[0].slice(0, 80)}`,
       text: text + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: `${ws_.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}`,
-      data: { channel: ev.channel, channelType: ck, user: ev.user, userName: who, ts: ev.ts, threadTs, text: raw, files, workspace: ws_.url, context },
+      data: { channel: ev.channel, channelType: ck, place, user: ev.user, userName: who, ts: ev.ts, threadTs, text: raw, files, workspace: ws_.url, context },
       // An answer goes out as you: subscribers that reply should mean to
       reply: { kind: "slack-me.send", data: { channel: ev.channel, threadTs } },
     },
