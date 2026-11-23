@@ -349,6 +349,7 @@ export default defineAddon({
       level: AnalyserNode; // the mic's loudness, read by the bubble's waveform
       samples: number; // how much was recorded (16 kHz)
       peak: number; // the loudest raw sample so far: 0 all through means the system handed over silence, not a quiet room
+      silentTold: boolean; // the silence toast was shown during this recording
       live: Live | null; // null until the recognizer's socket is set up
       buf: Int16Array[]; // recorded before that, handed over then
       ending: boolean; // released before the recognizer was ready: end it once it is
@@ -776,15 +777,19 @@ export default defineAddon({
         const ended = new Promise<void>((ok) => (finish = ok));
         const level = ctx.createAnalyser();
         level.fftSize = 1024;
-        const r: Rec = { stream, ctx, node, level, samples: 0, peak: 0, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
+        const r: Rec = { stream, ctx, node, level, samples: 0, peak: 0, silentTold: false, live: null, buf: [], ending: false, ended, finish, cutoff: setTimeout(() => finishRecording(), 3 * 60_000) };
         rec = r;
         node.onaudioprocess = (e) => {
           const f = e.inputBuffer.getChannelData(0);
           for (let i = 0; i < f.length; i++) if (Math.abs(f[i]) > r.peak) r.peak = Math.abs(f[i]);
           const pcm = to16k(f, ctx.sampleRate);
           r.samples += pcm.length;
-          // On the Mac App the cause is known (see silentMic) and certain, so say it while you talk instead of after
-          if (macApp && r.peak === 0 && r.samples >= 16000 && r.samples - pcm.length < 16000) asrFail(silentMic());
+          // On the Mac App the cause is known (see silentMic) and certain, so say it while you talk instead of after.
+          // A toast, not the bubble's note: it's not about this recording but the App, and has to outlive the press
+          if (macApp && r.peak === 0 && !r.silentTold && r.samples >= 16000) {
+            r.silentTold = true;
+            g.notify(silentMic(), { level: "error" });
+          }
           if (r.live) r.live.push(pcm);
           else r.buf.push(pcm);
         };
@@ -884,7 +889,10 @@ export default defineAddon({
         const silent = r.peak === 0;
         sendTrace(silent ? "silent" : `empty(peak=${r.peak.toFixed(4)})`);
         dropLive();
-        if (silent) return note(silentMic(), true);
+        if (silent) {
+          if (!r.silentTold) g.notify(silentMic(), { level: "error" });
+          return;
+        }
         return note(asrErr || T("没听清，再说一次？", "Didn't catch that. Again?"), !!asrErr);
       }
       sendTrace(deliver(text, session, to, edit));
