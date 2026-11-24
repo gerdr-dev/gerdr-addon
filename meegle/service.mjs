@@ -265,12 +265,25 @@ async function poll() {
       if (s.until < now) delete state.items[wid];
     }
 
+    // When each entry not yet sent was first noticed: part of its event id, so a retry after a failed send (or a
+    // poll cut short) sends the same id and subscribers drop the copy, while an entry that comes back later is new
+    state.appeared ??= {};
+    const current = new Set(list.map(entryKey));
+    for (const k of Object.keys(state.appeared)) if (!current.has(k) || before.has(k)) delete state.appeared[k];
+
     let sent = 0;
+    const unsent = new Set(); // entries whose event failed: left out of state.todo, so the next poll tries again
     for (const [wid, it] of byItem) {
       const fresh = it.entries.filter((x) => !before.has(entryKey(x)));
-      if (!first && fresh.length) {
-        await emitTodo(wid, it.project, fresh).catch((e) => log("todo event failed", wid, e.message));
+      if (first || !fresh.length) continue;
+      for (const x of fresh) state.appeared[entryKey(x)] ??= now;
+      try {
+        await emitTodo(wid, it.project, fresh);
         sent++;
+      } catch (e) {
+        if (e instanceof AuthError) throw e;
+        log("todo event failed, will retry", wid, e.message);
+        for (const x of fresh) unsent.add(entryKey(x));
       }
     }
 
@@ -294,10 +307,18 @@ async function poll() {
         const seen = new Set(s.seen);
         const newOnes = cs.filter((c) => !seen.has(String(c.comment_id)));
         for (const c of newOnes) {
+          if (String(c.creator) !== me.key) {
+            try {
+              await emitComment(wid, s.project, c, cs);
+              sent++;
+            } catch (e) {
+              if (e instanceof AuthError) throw e;
+              // not marked seen: the next poll tries again (the id is the comment's, so a copy is dropped)
+              log("comment event failed, will retry", wid, e.message);
+              continue;
+            }
+          }
           s.seen.push(String(c.comment_id));
-          if (String(c.creator) === me.key) continue;
-          await emitComment(wid, s.project, c, cs).catch((e) => log("comment event failed", wid, e.message));
-          sent++;
         }
         s.seen = s.seen.slice(-200);
       }
@@ -305,7 +326,7 @@ async function poll() {
       for (const s of Object.values(state.items)) s.seen = null;
     }
 
-    state.todo = list.map(entryKey);
+    state.todo = list.map(entryKey).filter((k) => !unsent.has(k));
     await saveState();
     loginWarned = false;
     const watched = Object.keys(state.items).length;
@@ -370,7 +391,7 @@ async function emitTodo(wid, project, entries) {
   out({
     type: "event",
     event: {
-      id: `meegle:todo:${entries.map(entryKey).sort().join(",")}:${Date.now()}`,
+      id: `meegle:todo:${entries.map((x) => `${entryKey(x)}@${state.appeared?.[entryKey(x)] ?? ""}`).sort().join(",")}`,
       kind: "todo",
       key: `${spaces.get(project) || project}/${wid}`,
       actor: w.from?.key ? String(w.from.key) : undefined,
