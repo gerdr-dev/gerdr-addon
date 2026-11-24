@@ -2,8 +2,8 @@
 // The Claude Code / Codex quotas at the bottom of the sidebar: one row per account, always in sight, without typing
 // /usage (which goes into the conversation). Collapsed it shows the two that matter (the 5-hour window and the week;
 // a per-model weekly quota at 0% steps aside); click for every quota and when it resets.
-// Each quota reads as what is left plus a ring of it (green, amber from 70% used, red from 90%), the way agents' own
-// usage popovers show it: "how much can I still use" is the question, not "how much is gone".
+// Each quota is its percent used and a ring filled by it; expanded, the 5-hour window and the week sit side by side
+// with the reset countdown under each, so the list stays short.
 // Asked every 3 minutes while the window is visible; the backend caches, so several windows ask only once.
 
 const POLL = 3 * 60_000;
@@ -40,33 +40,46 @@ export default defineAddon({
       return { list, loading, refresh: () => load(true) };
     }
 
-    /** How much is left, as a ring: the arc is what remains, coloured by how much is used (ok / warn ≥70 / bad ≥90). */
+    const tone = (pct: number) => (pct >= 90 ? "stroke-bad" : pct >= 70 ? "stroke-warn" : "stroke-brand");
+
+    /** A ring filled with how much of the quota is used (brand, amber from 70%, red from 90%). */
     function Ring({ used, size }: { used: number; size: number }) {
       const sw = 2;
       const r = (size - sw) / 2;
       const c = 2 * Math.PI * r;
-      const rest = Math.min(100, Math.max(0, 100 - used));
-      const color = used >= 90 ? "stroke-bad" : used >= 70 ? "stroke-warn" : "stroke-ok";
+      const v = Math.min(100, Math.max(0, used));
       return (
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" className="shrink-0">
           <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={sw} className="stroke-muted-foreground/25" />
-          {rest > 0 && (
+          {v > 0 && (
             <circle
               cx={size / 2}
               cy={size / 2}
               r={r}
               strokeWidth={sw}
               strokeLinecap="round"
-              strokeDasharray={`${(c * Math.max(3, rest)) / 100} ${c}`}
+              strokeDasharray={`${(c * Math.max(3, v)) / 100} ${c}`}
               transform={`rotate(-90 ${size / 2} ${size / 2})`}
-              className={color}
+              className={tone(v)}
             />
           )}
         </svg>
       );
     }
 
-    const left = (used: number) => `剩 ${Math.round(Math.max(0, 100 - used))}%`;
+    const pct = (used: number) => `${Math.round(used)}%`;
+
+    /** Expanded, the quotas go two to a row: the 5-hour window left, the week right, each extra one (a per-model
+     * week) on a row of its own in its period's column. */
+    function columns(limits: UsageLimit[]) {
+      const isShort = (l: UsageLimit) => (l.windowMins ?? 0) <= 24 * 60;
+      const shorts = limits.filter(isShort);
+      const longs = limits.filter((l) => !isShort(l));
+      const out: (UsageLimit | null)[] = [shorts.shift() ?? null, longs.shift() ?? null];
+      for (const l of shorts) out.push(l, null);
+      for (const l of longs) out.push(null, l);
+      return out;
+    }
 
     // "5 小时" → "5h", "本周" → "周": two have to fit on one collapsed row
     const short = (label: string) =>
@@ -136,21 +149,26 @@ export default defineAddon({
                           </span>
                         )}
                       </div>
-                      {limits.map((l) => (
-                        // Like agents' own usage popovers: name and when it resets on the left, what's left and a ring on the right
-                        <div
-                          key={l.kind + l.label}
-                          className="mt-1.5 flex items-center gap-2 text-[11px]"
-                          title={`${l.label} 用了 ${Math.round(l.percent)}%${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}
-                        >
-                          <div className="min-w-0 flex-1 leading-snug text-muted-foreground">
-                            <div className="truncate">{l.label}</div>
-                            {!!l.resetsAt && <div className="truncate tabular-nums">{resetIn(l.resetsAt, now)}</div>}
-                          </div>
-                          <span className="shrink-0 text-muted-foreground tabular-nums">{left(l.percent)}</span>
-                          <Ring used={l.percent} size={14} />
-                        </div>
-                      ))}
+                      <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                        {columns(limits).map((l, i) =>
+                          l ? (
+                            <div
+                              key={l.kind + l.label}
+                              className="min-w-0"
+                              title={`${l.label} 用了 ${pct(l.percent)}${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="min-w-0 truncate text-muted-foreground">{short(l.label)}</span>
+                                <span className="ml-auto shrink-0 tabular-nums">{pct(l.percent)}</span>
+                                <Ring used={l.percent} size={12} />
+                              </div>
+                              {!!l.resetsAt && <div className="truncate text-[10px] text-muted-foreground tabular-nums">{resetIn(l.resetsAt, now)}</div>}
+                            </div>
+                          ) : (
+                            <span key={i} />
+                          ),
+                        )}
+                      </div>
                     </>
                   ) : (
                     <div className="flex items-center gap-2 text-[11px]">
@@ -167,7 +185,7 @@ export default defineAddon({
                           title={`${l.label} 用了 ${Math.round(l.percent)}%${l.resetsAt ? ` · ${resetIn(l.resetsAt, now)}` : ""}`}
                         >
                           <span className="shrink-0 text-muted-foreground">{short(l.label)}</span>
-                          <span className="min-w-0 truncate tabular-nums">{left(l.percent)}</span>
+                          <span className="min-w-0 truncate tabular-nums">{pct(l.percent)}</span>
                           <Ring used={l.percent} size={12} />
                         </span>
                       ))}
