@@ -2,8 +2,8 @@
 // The Claude Code / Codex quotas at the bottom of the sidebar: one row per account, always in sight, without typing
 // /usage (which goes into the conversation). Collapsed it shows the two that matter (the 5-hour window and the week;
 // a per-model weekly quota at 0% steps aside); click for every quota and when it resets.
-// Each quota is its percent used and a ring filled by it; expanded, the 5-hour window and the week sit side by side
-// with the reset countdown under each, so the list stays short.
+// A small table: columns 5 小时 and 本周 (named once), a row per account with a ring and the percent used; expanded,
+// each cell also says when it resets and the per-model quotas (Fable) hang under their account.
 // Asked every 3 minutes while the window is visible; the backend caches, so several windows ask only once.
 
 const POLL = 3 * 60_000;
@@ -68,45 +68,30 @@ export default defineAddon({
     }
 
     const pct = (used: number) => `${Math.round(used)}%`;
+    const grid = "grid grid-cols-[4rem_1fr_1fr] items-center gap-x-1.5";
 
-    /** Expanded, the quotas go two to a row: the 5-hour window left, the week right, each extra one (a per-model
-     * week) on a row of its own in its period's column. */
-    function columns(limits: UsageLimit[]) {
-      const isShort = (l: UsageLimit) => (l.windowMins ?? 0) <= 24 * 60;
-      const shorts = limits.filter(isShort);
-      const longs = limits.filter((l) => !isShort(l));
-      const out: (UsageLimit | null)[] = [shorts.shift() ?? null, longs.shift() ?? null];
-      for (const l of shorts) out.push(l, null);
-      for (const l of longs) out.push(null, l);
-      return out;
+    const isShort = (l: UsageLimit) => (l.windowMins ?? 0) <= 24 * 60;
+    const perModel = (l: UsageLimit) => /·/.test(l.label);
+    /** The account-wide 5-hour window and week: the row's two columns. */
+    function main(limits: UsageLimit[]) {
+      const wide = limits.filter((l) => !perModel(l));
+      const from = wide.length ? wide : limits;
+      return { short: from.find(isShort), week: from.find((l) => !isShort(l)) };
     }
 
-    // "5 小时" → "5h", "本周" → "周": two have to fit on one collapsed row
-    const short = (label: string) =>
-      label
-        .replace(/^(\d+) 小时$/, "$1h")
-        .replace(/^本周$/, "周")
-        .replace(/^本周 · /, "周·");
-
-    /** "4h 12m 后重置", "5d 8h 后重置"; the date and time go in the tooltip. */
-    function resetIn(ms: number, now: number) {
+    /** "4h45m", "5d8h", "12m": short enough to sit after the percent. */
+    function soon(ms: number, now: number) {
       const m = Math.round((ms - now) / 60_000);
       if (m <= 0) return "已重置";
-      const d = Math.floor(m / 1440);
+      if (m < 60) return `${m}m`;
+      if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}m` : ""}`;
       const h = Math.floor((m % 1440) / 60);
-      const rest = m < 60 ? `${Math.max(1, m)}m` : m < 1440 ? `${h}h${m % 60 ? ` ${m % 60}m` : ""}` : `${d}d${h ? ` ${h}h` : ""}`;
-      return `${rest} 后重置`;
+      return `${Math.floor(m / 1440)}d${h ? `${h}h` : ""}`;
     }
     const when = (ms: number) => {
       const d = new Date(ms);
       return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 重置`;
     };
-
-    // The short window first, then the week; a per-model quota at 0% goes last
-    function pick(limits: UsageLimit[]) {
-      const rank = (l: UsageLimit) => (l.percent === 0 && /·/.test(l.label) ? 2 : 0) + ((l.windowMins ?? 0) > 24 * 60 ? 1 : 0);
-      return [...limits].sort((a, b) => rank(a) - rank(b)).slice(0, 2);
-    }
 
     // Adapter errors come as a JSON-RPC error object; the readable part is data.error
     function readable(error: string) {
@@ -126,72 +111,64 @@ export default defineAddon({
       const now = Date.now();
       return (
         <div className="px-1.5">
-          {/* py-1.5 plus each row's py-0.5 = 8px, the same as px-2 at the sides, so the hover fill is even all round */}
+          {/* A table: the column names once, a row per account (ring, percent used, and expanded, when it resets);
+              expanded also lists the per-model quotas (Fable) under their account */}
           <button
             type="button"
-            className="w-full rounded-md px-2 py-1.5 text-left hover:bg-accent/60"
+            className="w-full rounded-md px-2 py-1 text-left text-[11px] hover:bg-accent/60"
             title={open ? "收起" : "看全部额度和重置时间"}
             onClick={() => setOpen((v) => !v)}
           >
+            <div className={ui.cn(grid, "text-[10px] text-muted-foreground/70")}>
+              <span />
+              <span>5 小时</span>
+              <span>本周</span>
+            </div>
             {shown.map((u) => {
               const limits = u.data?.limits ?? [];
               const name = u.agent === "claude" ? "Claude" : u.agent === "codex" ? "Codex" : u.name;
+              const { short, week } = main(limits);
+              const cell = (l?: UsageLimit) =>
+                l ? (
+                  <span className="flex min-w-0 items-center gap-1" title={`${l.label} 用了 ${pct(l.percent)}${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}>
+                    <Ring used={l.percent} size={12} />
+                    <span className="w-[29px] shrink-0 tabular-nums">{pct(l.percent)}</span>
+                    {open && !!l.resetsAt && <span className="truncate text-[10px] text-muted-foreground/70 tabular-nums">{soon(l.resetsAt, now)}</span>}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground/40">–</span>
+                );
               return (
-                <div key={u.agent} className={ui.cn("py-0.5", open && "mt-1.5 first:mt-0")}>
-                  {open ? (
-                    <>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-[12px] font-semibold">{name}</span>
-                        {u.data?.plan && <span className="text-[11px] text-muted-foreground">{u.data.plan}</span>}
-                        {u.error && (
-                          <span className="ml-auto truncate text-[11px] text-warn" title={readable(u.error)}>
-                            {u.data ? "没刷新上" : "拿不到"}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-                        {columns(limits).map((l, i) =>
-                          l ? (
-                            <div
-                              key={l.kind + l.label}
-                              className="min-w-0"
-                              title={`${l.label} 用了 ${pct(l.percent)}${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <span className="min-w-0 truncate text-muted-foreground">{short(l.label)}</span>
-                                <span className="ml-auto shrink-0 tabular-nums">{pct(l.percent)}</span>
-                                <Ring used={l.percent} size={12} />
-                              </div>
-                              {!!l.resetsAt && <div className="truncate text-[10px] text-muted-foreground tabular-nums">{resetIn(l.resetsAt, now)}</div>}
-                            </div>
-                          ) : (
-                            <span key={i} />
-                          ),
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <span className="w-11 shrink-0 truncate text-muted-foreground">{name}</span>
-                      {limits.length === 0 && (
-                        <span className="truncate text-warn" title={u.error ? readable(u.error) : undefined}>
-                          拿不到
-                        </span>
-                      )}
-                      {pick(limits).map((l) => (
-                        <span
-                          key={l.kind + l.label}
-                          className="flex min-w-0 flex-1 items-center gap-1"
-                          title={`${l.label} 用了 ${Math.round(l.percent)}%${l.resetsAt ? ` · ${resetIn(l.resetsAt, now)}` : ""}`}
-                        >
-                          <span className="shrink-0 text-muted-foreground">{short(l.label)}</span>
-                          <span className="min-w-0 truncate tabular-nums">{pct(l.percent)}</span>
-                          <Ring used={l.percent} size={12} />
-                        </span>
+                <React.Fragment key={u.agent}>
+                  <div className={ui.cn(grid, "py-[3px]")}>
+                    <span
+                      className={ui.cn("truncate", u.error && "text-warn")}
+                      title={`${name}${u.data?.plan ? ` · ${u.data.plan}` : ""}${u.error ? `：${readable(u.error)}` : ""}`}
+                    >
+                      {name}
+                    </span>
+                    {limits.length === 0 ? (
+                      <span className="col-span-2 truncate text-warn" title={u.error ? readable(u.error) : undefined}>
+                        拿不到
+                      </span>
+                    ) : (
+                      <>
+                        {cell(short)}
+                        {cell(week)}
+                      </>
+                    )}
+                  </div>
+                  {open &&
+                    limits
+                      .filter((l) => l !== short && l !== week)
+                      .map((l) => (
+                        <div key={l.kind + l.label} className={ui.cn(grid, "py-[3px]")}>
+                          <span className="truncate pl-2.5 text-[10px] text-muted-foreground">{l.label.split(/\s*·\s*/)[1] ?? l.label}</span>
+                          {isShort(l) ? cell(l) : <span />}
+                          {isShort(l) ? <span /> : cell(l)}
+                        </div>
                       ))}
-                    </div>
-                  )}
-                </div>
+                </React.Fragment>
               );
             })}
           </button>
