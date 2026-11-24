@@ -132,7 +132,7 @@ export default defineAddon({
                 l ? (
                   <span className="flex min-w-0 items-center gap-1" title={`${l.label} 用了 ${pct(l.percent)}${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}>
                     <Ring used={l.percent} size={12} />
-                    <span className="w-[29px] shrink-0 tabular-nums">{pct(l.percent)}</span>
+                    <span className="min-w-[33px] shrink-0 tabular-nums">{pct(l.percent)}</span>
                     {open && !!l.resetsAt && <span className="truncate text-[10px] text-muted-foreground/70 tabular-nums">{soon(l.resetsAt, now)}</span>}
                   </span>
                 ) : (
