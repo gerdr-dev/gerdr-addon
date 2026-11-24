@@ -2,6 +2,8 @@
 // The Claude Code / Codex quotas at the bottom of the sidebar: one row per account, always in sight, without typing
 // /usage (which goes into the conversation). Collapsed it shows the two that matter (the 5-hour window and the week;
 // a per-model weekly quota at 0% steps aside); click for every quota and when it resets.
+// Each quota reads as what is left plus a ring of it (green, amber from 70% used, red from 90%), the way agents' own
+// usage popovers show it: "how much can I still use" is the question, not "how much is gone".
 // Asked every 3 minutes while the window is visible; the backend caches, so several windows ask only once.
 
 const POLL = 3 * 60_000;
@@ -38,28 +40,54 @@ export default defineAddon({
       return { list, loading, refresh: () => load(true) };
     }
 
-    const tone = (pct: number) => (pct >= 90 ? "bg-bad" : pct >= 70 ? "bg-warn" : "bg-brand");
-
-    function Bar({ pct, className }: { pct: number; className?: string }) {
+    /** How much is left, as a ring: the arc is what remains, coloured by how much is used (ok / warn ≥70 / bad ≥90). */
+    function Ring({ used, size }: { used: number; size: number }) {
+      const sw = 2;
+      const r = (size - sw) / 2;
+      const c = 2 * Math.PI * r;
+      const rest = Math.min(100, Math.max(0, 100 - used));
+      const color = used >= 90 ? "stroke-bad" : used >= 70 ? "stroke-warn" : "stroke-ok";
       return (
-        <div className={ui.cn("h-1 overflow-hidden rounded-full bg-muted", className)}>
-          <div className={ui.cn("h-full rounded-full", tone(pct))} style={{ width: `${Math.min(100, Math.max(pct > 0 ? 3 : 0, pct))}%` }} />
-        </div>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" className="shrink-0">
+          <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={sw} className="stroke-muted-foreground/25" />
+          {rest > 0 && (
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              strokeWidth={sw}
+              strokeLinecap="round"
+              strokeDasharray={`${(c * Math.max(3, rest)) / 100} ${c}`}
+              transform={`rotate(-90 ${size / 2} ${size / 2})`}
+              className={color}
+            />
+          )}
+        </svg>
       );
     }
 
-    // "5 小时" → "5h", "本周" → "周": two have to fit on one collapsed row
-    const short = (label: string) => label.replace(/^(\d+) 小时$/, "$1h").replace(/^本周$/, "周").replace(/^本周 · /, "周·");
+    const left = (used: number) => `剩 ${Math.round(Math.max(0, 100 - used))}%`;
 
-    function fmtReset(ms: number, now: number) {
-      const d = new Date(ms);
-      const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      const left = ms - now;
-      if (left <= 0) return `${when} 重置`;
-      const mins = Math.round(left / 60_000);
-      const rest = mins < 60 ? `${Math.max(1, mins)}m` : mins < 48 * 60 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)} 天`;
-      return `${when} 重置 · 还剩 ${rest}`;
+    // "5 小时" → "5h", "本周" → "周": two have to fit on one collapsed row
+    const short = (label: string) =>
+      label
+        .replace(/^(\d+) 小时$/, "$1h")
+        .replace(/^本周$/, "周")
+        .replace(/^本周 · /, "周·");
+
+    /** "4h 12m 后重置", "5d 8h 后重置"; the date and time go in the tooltip. */
+    function resetIn(ms: number, now: number) {
+      const m = Math.round((ms - now) / 60_000);
+      if (m <= 0) return "已重置";
+      const d = Math.floor(m / 1440);
+      const h = Math.floor((m % 1440) / 60);
+      const rest = m < 60 ? `${Math.max(1, m)}m` : m < 1440 ? `${h}h${m % 60 ? ` ${m % 60}m` : ""}` : `${d}d${h ? ` ${h}h` : ""}`;
+      return `${rest} 后重置`;
     }
+    const when = (ms: number) => {
+      const d = new Date(ms);
+      return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 重置`;
+    };
 
     // The short window first, then the week; a per-model quota at 0% goes last
     function pick(limits: UsageLimit[]) {
@@ -96,26 +124,31 @@ export default defineAddon({
               const limits = u.data?.limits ?? [];
               const name = u.agent === "claude" ? "Claude" : u.agent === "codex" ? "Codex" : u.name;
               return (
-                <div key={u.agent} className="py-0.5">
+                <div key={u.agent} className={ui.cn("py-0.5", open && "mt-1.5 first:mt-0")}>
                   {open ? (
                     <>
-                      <div className="flex items-baseline gap-1.5 text-[11px]">
-                        <span className="font-medium">{name}</span>
-                        {u.data?.plan && <span className="text-muted-foreground">{u.data.plan}</span>}
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[12px] font-semibold">{name}</span>
+                        {u.data?.plan && <span className="text-[11px] text-muted-foreground">{u.data.plan}</span>}
                         {u.error && (
-                          <span className="ml-auto truncate text-warn" title={readable(u.error)}>
+                          <span className="ml-auto truncate text-[11px] text-warn" title={readable(u.error)}>
                             {u.data ? "没刷新上" : "拿不到"}
                           </span>
                         )}
                       </div>
                       {limits.map((l) => (
-                        <div key={l.kind + l.label} className="mt-1">
-                          <div className="flex items-baseline gap-2 text-[11px]">
-                            <span className="min-w-0 flex-1 truncate text-muted-foreground">{l.label}</span>
-                            <span className="tabular-nums">{Math.round(l.percent)}%</span>
+                        // Like agents' own usage popovers: name and when it resets on the left, what's left and a ring on the right
+                        <div
+                          key={l.kind + l.label}
+                          className="mt-1.5 flex items-center gap-2 text-[11px]"
+                          title={`${l.label} 用了 ${Math.round(l.percent)}%${l.resetsAt ? ` · ${when(l.resetsAt)}` : ""}`}
+                        >
+                          <div className="min-w-0 flex-1 leading-snug text-muted-foreground">
+                            <div className="truncate">{l.label}</div>
+                            {!!l.resetsAt && <div className="truncate tabular-nums">{resetIn(l.resetsAt, now)}</div>}
                           </div>
-                          <Bar pct={l.percent} className="mt-0.5" />
-                          {!!l.resetsAt && <div className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">{fmtReset(l.resetsAt, now)}</div>}
+                          <span className="shrink-0 text-muted-foreground tabular-nums">{left(l.percent)}</span>
+                          <Ring used={l.percent} size={14} />
                         </div>
                       ))}
                     </>
@@ -128,10 +161,14 @@ export default defineAddon({
                         </span>
                       )}
                       {pick(limits).map((l) => (
-                        <span key={l.kind + l.label} className="flex min-w-0 flex-1 items-center gap-1" title={`${l.label} ${Math.round(l.percent)}%`}>
+                        <span
+                          key={l.kind + l.label}
+                          className="flex min-w-0 flex-1 items-center gap-1"
+                          title={`${l.label} 用了 ${Math.round(l.percent)}%${l.resetsAt ? ` · ${resetIn(l.resetsAt, now)}` : ""}`}
+                        >
                           <span className="shrink-0 text-muted-foreground">{short(l.label)}</span>
-                          <Bar pct={l.percent} className="min-w-3 flex-1" />
-                          <span className="shrink-0 tabular-nums">{Math.round(l.percent)}%</span>
+                          <span className="min-w-0 truncate tabular-nums">{left(l.percent)}</span>
+                          <Ring used={l.percent} size={12} />
                         </span>
                       ))}
                     </div>
