@@ -76,6 +76,35 @@ export default defineAddon({
     const look = (s?: State) =>
       g.ui.cn(!s || !running() ? "opacity-50" : "", s?.error ? "text-bad" : s?.active ? "bg-brand/15 text-brand hover:bg-brand/25 hover:text-brand" : s?.on ? "bg-warn/15 text-warn" : "");
 
+    // The battery along the button's own edge, filled clockwise from the top middle: green from 50%, yellow under
+    // 50%, red under 20%. Green is faint (all fine needs no attention), yellow and red are not. Only while turned on
+    // (the battery is what decides when it lets go); off, no battery (a desktop Mac) or no report yet: nothing. The
+    // corner radius is read off the button, so the line follows whatever rounding Gerdr gives it.
+    function Ring({ side, s }: { side: number; s?: State }) {
+      const ref = g.React.useRef<SVGSVGElement>(null);
+      const [rad, setRad] = useState(6);
+      g.React.useLayoutEffect(() => {
+        const el = ref.current?.parentElement;
+        if (el) setRad(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0);
+      });
+      if (!s || !s.on || s.percent < 0) return null;
+      const p = Math.max(0, Math.min(100, s.percent));
+      const sw = 1.25;
+      const o = sw / 2; // the stroke's middle, so it lies inside the edge
+      const e = side - o;
+      const r = Math.max(0, Math.min(rad - o, side / 2 - o));
+      const m = side / 2;
+      const d =
+        `M${m},${o} H${e - r} A${r},${r} 0 0 1 ${e},${o + r} V${e - r} A${r},${r} 0 0 1 ${e - r},${e} ` +
+        `H${o + r} A${r},${r} 0 0 1 ${o},${e - r} V${o + r} A${r},${r} 0 0 1 ${o + r},${o} H${m}`;
+      const color = p < 20 ? "text-bad" : p < 50 ? "text-warn" : "text-ok/40";
+      return (
+        <svg ref={ref} width={side} height={side} className={g.ui.cn("pointer-events-none absolute inset-0", color)} aria-hidden>
+          <path d={d} fill="none" stroke="currentColor" strokeWidth={sw} pathLength={100} strokeDasharray={`${p} 100`} />
+        </svg>
+      );
+    }
+
     // The whole rail button is ours ("railButton" slot): a click toggles, hovering shows the details. Gerdr hands
     // its own button classes (size, colours, hover) so it sits like its neighbours; the state goes on top.
     // Gerdr gives one fixed side: width on the rail (a column), height in the phone drawer's row. A square button
@@ -102,7 +131,7 @@ export default defineAddon({
               aria-checked={on}
               aria-label={title(s)}
               style={{ width: side, height: side }}
-              className={g.ui.cn("flex items-center justify-center", className, look(s))}
+              className={g.ui.cn("relative flex items-center justify-center", className, look(s))}
               onPointerEnter={hover(true)}
               onPointerLeave={hover(false)}
               onClick={(e: any) => {
@@ -112,6 +141,7 @@ export default defineAddon({
                 toggle();
               }}
             >
+              <Ring side={side} s={s} />
               <Pic icon={iconOf(on)} className={side >= 32 ? "size-5" : "size-4"} moving={animated(on)} />
             </button>
           </g.ui.PopoverTrigger>
@@ -146,7 +176,8 @@ export default defineAddon({
           style={{ width, height }}
           className="flex cursor-pointer items-center justify-center"
         >
-          <span style={{ width: height, height }} className={g.ui.cn("flex items-center justify-center rounded-md", look(s) || "text-muted-foreground")}>
+          <span style={{ width: height, height }} className={g.ui.cn("relative flex items-center justify-center rounded-md", look(s) || "text-muted-foreground")}>
+            <Ring side={height} s={s} />
             <Pic icon={iconOf(on)} className="size-4" moving={animated(on)} />
           </span>
         </span>
