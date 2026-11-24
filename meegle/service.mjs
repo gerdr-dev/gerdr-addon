@@ -113,7 +113,11 @@ async function signedIn() {
   try {
     const s = await meegle(["auth", "status"]);
     if (s.host) host = s.host;
-    return s.authenticated !== false;
+    // Only a missing or rejected token means signed out. Offline (a computer just woken, no DNS yet) status says
+    // authenticated: false too, with reason "server unreachable: …" and exit code 2: that was a false "sign in again"
+    // (2026-11-24). The token is refreshed by the CLI itself, so a real sign-out is rare.
+    if (s.authenticated !== false) return true;
+    return !/no local token|rejected/i.test(String(s.reason ?? ""));
   } catch (e) {
     return !(e instanceof AuthError);
   }
