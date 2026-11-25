@@ -1,6 +1,6 @@
 {
   "name": "Slack 私聊（我的账号）",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "收别人发给你本人的 Slack 私聊，变成 Gerdr 事件；回复以你本人的身份发出。不用建 app，用你在 Slack 桌面版的登录（要装 slackctl）。",
   "icon": "icon.svg",
   "service": {
@@ -77,7 +77,7 @@
       "key": "afterMe",
       "title": "说话后接着收",
       "type": "number",
-      "default": 60,
+      "default": 30,
       "min": 0,
       "max": 1440,
       "unit": "分钟",

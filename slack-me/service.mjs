@@ -172,7 +172,7 @@ const smallMax = (st = settings) => Math.max(0, Math.floor(Number(st.smallChanne
 /** threads: a channel thread you said something in or were @-mentioned in is heard in full. On unless turned off. */
 const threadsOn = (st = settings) => st.threads !== false;
 /** afterMe: for this many minutes after you speak at a channel's top level, what others say there is heard; 0 = off. */
-const afterMin = (st = settings) => Math.max(0, Math.floor(Number(st.afterMe ?? 60) || 0));
+const afterMin = (st = settings) => Math.max(0, Math.floor(Number(st.afterMe ?? 30) || 0));
 /** Whether listen has to pass every channel message (each of these is decided here, not by slackctl's filter). */
 const needAll = (st = settings) => smallMax(st) > 0 || threadsOn(st) || afterMin(st) > 0;
 
