@@ -418,7 +418,7 @@ async function onMessage(ev) {
   } else return;
 
   const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
-  if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
+  if (full) ev = { ...ev, ...withShared(full.text ?? ev.text, full) };
   const raw = ev.text ?? "";
   const text = await readable(raw);
 
@@ -466,17 +466,35 @@ async function before(channel, ts, threadTs) {
       ? await api("conversations.replies", { channel, ts: threadTs, latest: ts, inclusive: "false", limit: "50" })
       : await api("conversations.history", { channel, latest: ts, oldest, inclusive: "false", limit: String(CONTEXT) });
   const msgs = (j.messages ?? [])
-    .filter((m) => m.ts !== ts && Number(m.ts) < Number(ts) && Number(m.ts) >= Number(oldest) && (m.text || m.files?.length))
+    .filter((m) => m.ts !== ts && Number(m.ts) < Number(ts) && Number(m.ts) >= Number(oldest) && (m.text || m.files?.length || m.attachments?.some((a) => a.is_share)))
     .sort((a, b) => Number(a.ts) - Number(b.ts))
     .slice(-CONTEXT);
   const out = [];
   for (const m of msgs) {
     const mine = m.user === me;
     const name = m.bot_id && !m.user ? m.username || "bot" : await nameOf(m.user);
-    const text = (await readable(m.text)).slice(0, 600) + (m.files?.length ? ` [附件：${m.files.map((f) => f.name).join("、")}]` : "");
+    const sh = await withShared(m.text, m);
+    const text = (await readable(sh.text)).slice(0, 600) + (sh.files.length ? ` [附件：${sh.files.map((f) => f.name).join("、")}]` : "");
     out.push({ who: name, me: mine, text, at: Math.round(Number(m.ts) * 1000) });
   }
   return out;
+}
+
+// A forwarded message ("Forward" / share in Slack) comes with empty text: what was said, and its files, are in
+// attachments marked is_share (2026-11-25: a colleague's forwarded request with a screenshot reached the agent as an
+// empty DM, and it turned it down). Link previews are attachments too, without is_share, and stay out.
+async function withShared(text, m) {
+  let all = text ?? "";
+  const files = [...(m.files ?? [])];
+  for (const a of m.attachments ?? []) {
+    if (!a.is_share) continue;
+    const who = a.author_name || a.author_subname || (a.author_id ? await nameOf(a.author_id) : "");
+    const body = (a.text || a.fallback || "").trim();
+    const quoted = body ? body.split("\n").map((l) => `> ${l}`).join("\n") : "";
+    all += `${all ? "\n\n" : ""}${T(`[转发了 ${who || "别人"} 的消息]`, `[forwarded a message from ${who || "someone"}]`)}${quoted ? `\n${quoted}` : ""}`;
+    files.push(...(a.files ?? []));
+  }
+  return { text: all, files };
 }
 
 // One message as Slack stores it: a thread reply only shows up under its thread, anything else in the history
