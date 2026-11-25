@@ -48,6 +48,7 @@ let lastImport = 0;
 const names = new Map(); // user id → display name
 const kinds = new Map(); // channel id → { kind: "im" | "mpim" | "channel", members?, name?, at }
 const KIND_TTL = 3600_000; // people join and leave channels: a channel's size is asked again after this
+let connectedAt = 0; // when this process first heard Slack: a thread started after it has been seen whole, live
 
 // ---- slackctl ----
 
@@ -168,6 +169,85 @@ async function kindOf(channel) {
 
 /** smallChannel: a channel with at most this many members (you included) is heard in full; 0 = off. */
 const smallMax = (st = settings) => Math.max(0, Math.floor(Number(st.smallChannel) || 0));
+/** threads: a channel thread you said something in or were @-mentioned in is heard in full. On unless turned off. */
+const threadsOn = (st = settings) => st.threads !== false;
+/** afterMe: for this many minutes after you speak at a channel's top level, what others say there is heard; 0 = off. */
+const afterMin = (st = settings) => Math.max(0, Math.floor(Number(st.afterMe ?? 60) || 0));
+/** Whether listen has to pass every channel message (each of these is decided here, not by slackctl's filter). */
+const needAll = (st = settings) => smallMax(st) > 0 || threadsOn(st) || afterMin(st) > 0;
+
+// ---- conversations you're in ----
+//
+// Slack notifies you of replies in a thread you posted in or were @-mentioned in, and in a busy channel the talk right
+// after you said something is usually to you. Neither comes with an @ (2026-11-25: a colleague answered the user's
+// "什么环境" in the thread with just a link, and a channel discussion kept going under the user's messages; neither
+// reached the secretary). So what you say, and where you're @-mentioned, is remembered here, on disk so a restart
+// doesn't forget it: threads by "<channel>/<thread ts>" → last activity (ms), channels → when you last spoke at the
+// top level (ms).
+
+const INVOLVED = path.join(DATA, "involved.json");
+const THREAD_DAYS = 30; // a thread quiet for longer is forgotten
+let involved = { threads: {}, spoke: {} };
+let saveTimer = null;
+
+async function loadInvolved() {
+  try {
+    const j = JSON.parse(await readFile(INVOLVED, "utf8"));
+    involved = { threads: j.threads ?? {}, spoke: j.spoke ?? {} };
+  } catch {}
+}
+
+function saveInvolved() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const old = Date.now() - THREAD_DAYS * 86400_000;
+    for (const [k, at] of Object.entries(involved.threads)) if (at < old) delete involved.threads[k];
+    for (const [k, at] of Object.entries(involved.spoke)) if (at < old) delete involved.spoke[k];
+    await mkdir(DATA, { recursive: true }).catch(() => {});
+    await writeFile(INVOLVED, JSON.stringify(involved)).catch((e) => log("save involved failed", e.message));
+  }, 2000);
+}
+
+function joinThread(channel, threadTs) {
+  involved.threads[`${channel}/${threadTs}`] = Date.now();
+  saveInvolved();
+}
+
+// A thread that started before this process was listening may hold something of yours it never saw (said before the
+// add-on was updated, or while Gerdr was off): asked of Slack once, the answer kept. Later threads were seen whole, so
+// they are never asked about, which keeps this to a handful of calls in a channel-heavy workspace.
+const asked = new Map(); // thread key → when Slack said you're not in it
+let askedThisMinute = { at: 0, n: 0 };
+async function inThread(channel, threadTs) {
+  const key = `${channel}/${threadTs}`;
+  if (involved.threads[key]) return true;
+  if (Number(threadTs) * 1000 >= connectedAt) return false;
+  if (Date.now() - (asked.get(key) ?? 0) < 3600_000) return false;
+  // conversations.replies is rate limited (tier 3, ~50 a minute): a burst of old threads waking up mustn't use it all
+  if (Date.now() - askedThisMinute.at > 60_000) askedThisMinute = { at: Date.now(), n: 0 };
+  if (++askedThisMinute.n > 20) return false;
+  asked.set(key, Date.now());
+  try {
+    const j = await api("conversations.replies", { channel, ts: threadTs, limit: "200" });
+    const mine = (j.messages ?? []).some((m) => m.user === me || (m.text ?? "").includes(`<@${me}>`) || (m.text ?? "").includes(`<@${me}|`));
+    if (mine) joinThread(channel, threadTs);
+    return mine;
+  } catch (e) {
+    log("conversations.replies failed", key, e.message);
+    return false;
+  }
+}
+
+// What you say in a channel: its thread is yours from then on (your top-level message starts one), and the top level
+// is heard for a while
+function onMine(ev, ck) {
+  if (ck !== "channel") return;
+  joinThread(ev.channel, ev.thread_ts || ev.ts);
+  if (!ev.thread_ts || ev.subtype === "thread_broadcast") {
+    involved.spoke[ev.channel] = Date.now();
+    saveInvolved();
+  }
+}
 
 // ---- the connection: `slackctl listen` ----
 
@@ -213,11 +293,11 @@ async function connect() {
 
   // DMs, group DMs and @-mentions only, no bots: listen drops the rest of the workspace's traffic itself. It keeps the
   // socket alive and reconnects on its own; it exits only when it can't go on (sign-in rejected, Slack refusing).
-  // With smallChannel on, every channel message has to come through and onMessage sorts them by the channel's size.
-  // That costs nothing on Slack's side: the socket carries all of your channels either way and slackctl filters
-  // locally (internal/listen/event.go), so only this process parses more lines.
+  // With smallChannel, threads or afterMe on, every channel message has to come through (yours too, to know where you
+  // are) and onMessage sorts them. That costs nothing on Slack's side: the socket carries all of your channels either
+  // way and slackctl filters locally (internal/listen/event.go), so only this process parses more lines.
   const args = ["listen", "--workspace", ws_.url, "--include-bots=false"];
-  if (!smallMax()) args.push("--mentions-or-dms");
+  if (!needAll()) args.push("--mentions-or-dms");
   const p = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
   proc = p;
   let ended = ""; // "auth" | "refused": the last control line before it exits
@@ -232,6 +312,7 @@ async function connect() {
     if (f.type === "_connected" || f.type === "_reconnected") {
       backoff = 1000;
       me = f.self?.id ?? me;
+      connectedAt ||= Date.now();
       status(T(`已连上 ${ws_.name}（${f.self?.name ?? me}）`, `Connected to ${ws_.name} (${f.self?.name ?? me})`));
       log(f.type, ws_.url, me);
     } else if (f.type === "_auth_error") ended = "auth";
@@ -291,31 +372,50 @@ const allowList = () =>
 // A listen line: { type: "message", subtype?, channel, ts, thread_ts?, user, bot_id?, text, from_self, is_mention, is_dm }.
 // It has no files and cuts text at 2000 characters, so every message is read again in full. Nothing in the line says
 // whether files came with it: Slack's current uploads carry no file_share subtype, so "@a @b + a screenshot" arrived as
-// just "@a @b" while only image-only messages (empty text) got their files. Only DMs, @-mentions and small channels'
-// messages get this far, so one conversations.history call each is nothing next to the rate limit.
+// just "@a @b" while only image-only messages (empty text) got their files. Only DMs, @-mentions, small channels and
+// conversations you're in get this far, so one conversations.history call each is nothing next to the rate limit.
 
 async function onMessage(ev) {
   // listen already drops edits, deletions, joins…; files, thread broadcasts and /me are someone saying something
   if (ev.subtype && !["file_share", "thread_broadcast", "me_message"].includes(ev.subtype)) return;
-  // Bots (including a Gerdr bot answering in its own DM) and what you say yourself aren't messages *to* you
-  if (ev.bot_id || ev.from_self || !ev.user || ev.user === me || !ev.channel || !ev.ts) return;
+  if (ev.bot_id || !ev.user || !ev.channel || !ev.ts) return;
+  // What you say yourself isn't a message *to* you, but it tells where you are in the conversation
+  if (ev.from_self || ev.user === me) {
+    if (!ev.is_dm && (threadsOn() || afterMin())) onMine(ev, (await kindOf(ev.channel)).kind);
+    return;
+  }
   const allow = allowList();
   if (allow.length && !allow.includes(ev.user)) return;
 
   const info = ev.is_dm ? { kind: "im" } : await kindOf(ev.channel);
   const ck = info.kind;
   const small = ck === "channel" && smallMax() > 0 && info.members > 0 && info.members <= smallMax();
+  // A thread that's partly yours, or the top level right after you spoke there: the conversation is with you though
+  // the message doesn't @ you
+  let followed = false;
   let kind;
   if (ck === "im") kind = "direct";
   else if (ck === "mpim") {
     if (settings.groupDMs === false) return;
     kind = "direct";
-  } else if (settings.mentions && ev.is_mention) kind = "mention";
+  } else if (settings.mentions && ev.is_mention) {
+    kind = "mention";
+    // Being @-mentioned puts you in the thread (a top-level @ starts one): the answers under it come in too
+    if (threadsOn()) joinThread(ev.channel, ev.thread_ts || ev.ts);
+  }
   // A channel of a few people is talk among them, you included, like a group DM: a colleague's answer there comes
   // without a thread or an @ (2026-11-23: an agent waiting for one couldn't, as nothing but @-mentions came in). Its
   // own kind, so a panel that starts work on every DM doesn't on every word said here; following one still works.
   else if (small) kind = "channel";
-  else return;
+  else if (ev.thread_ts && ev.thread_ts !== ev.ts && threadsOn() && (await inThread(ev.channel, ev.thread_ts))) {
+    // Same key as the @-mention that brought you in, so whatever follows that conversation hears this
+    kind = "thread";
+    joinThread(ev.channel, ev.thread_ts);
+  } else if (!ev.thread_ts && afterMin() && Date.now() - (involved.spoke[ev.channel] ?? 0) <= afterMin() * 60_000) {
+    // The top level, keyed by the channel like a small channel's
+    kind = "channel";
+    followed = true;
+  } else return;
 
   const full = await fullMessage(ev.channel, ev.ts, ev.thread_ts).catch((e) => (log("fetch message failed", e.message), null));
   if (full) ev = { ...ev, text: full.text ?? ev.text, files: full.files };
@@ -325,7 +425,7 @@ async function onMessage(ev) {
   // Replies go in the message's thread, except a DM's or a small channel's top level, which is a conversation already.
   // An @-mention in a small channel too: keyed apart, a colleague's un-@'d answer right under it would be another
   // conversation, and a task following the mention would never hear it.
-  const whole = kind === "direct" || small;
+  const whole = kind === "direct" || small || followed;
   const threadTs = ev.thread_ts || (whole ? undefined : ev.ts);
   const who = await nameOf(ev.user);
   const files = await download(ev);
@@ -462,11 +562,11 @@ rl.on("line", (line) => {
     const first = !gotSettings;
     gotSettings = true;
     settings = m.settings ?? {};
-    // smallChannel decides listen's flags (on: every channel message has to come through)
-    if (first || prev.workspace !== settings.workspace || prev.slackctl !== settings.slackctl || !smallMax() !== !smallMax(prev)) {
+    // smallChannel / threads / afterMe decide listen's flags (on: every channel message has to come through)
+    if (first || prev.workspace !== settings.workspace || prev.slackctl !== settings.slackctl || needAll() !== needAll(prev)) {
       stopListen();
       backoff = 1000;
-      connect();
+      (first ? loadInvolved() : Promise.resolve()).then(connect);
     }
   } else if (m.type === "event" && m.event) {
     onGerdrEvent(m.event).catch((e) => log("send failed", e.message));

@@ -1,6 +1,6 @@
 {
   "name": "Slack 私聊（我的账号）",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "收别人发给你本人的 Slack 私聊，变成 Gerdr 事件；回复以你本人的身份发出。不用建 app，用你在 Slack 桌面版的登录（要装 slackctl）。",
   "icon": "icon.svg",
   "service": {
@@ -22,9 +22,15 @@
       "reply": "slack-me.send"
     },
     {
+      "kind": "thread",
+      "title": "Slack 我参与的消息列有人回话",
+      "description": "频道里你说过话或被 @ 过的消息列（thread），之后别人不 @ 你的回话（设置「参与过的消息列也收」）",
+      "reply": "slack-me.send"
+    },
+    {
       "kind": "channel",
-      "title": "Slack 小频道里有人说话",
-      "description": "人数不超过设置里「小频道全收」的频道，谁说的都算，不用 @ 你（要在设置里打开）",
+      "title": "Slack 频道里在跟我聊",
+      "description": "小频道（人数不超过「小频道全收」）里谁说的都算；大频道里你刚在顶层说过话，之后一阵别人说的也算（设置「说话后接着收」），不用 @ 你",
       "reply": "slack-me.send"
     }
   ],
@@ -59,6 +65,23 @@
       "max": 50,
       "unit": "人",
       "description": "人数（含你）不超过这个数的频道，里面所有人说的话都收，发成 slack-me/channel，不用 @ 你；顶层是一个对话（key 是频道 id），像群私聊。0 = 不收。"
+    },
+    {
+      "key": "threads",
+      "title": "参与过的消息列也收",
+      "type": "boolean",
+      "default": true,
+      "description": "频道里你说过话、或者被 @ 过的消息列（thread），之后别人的回话不 @ 你也收，发成 slack-me/thread；key 和 @ 你那条一样（频道/thread_ts），跟着它的任务能听到。"
+    },
+    {
+      "key": "afterMe",
+      "title": "说话后接着收",
+      "type": "number",
+      "default": 60,
+      "min": 0,
+      "max": 1440,
+      "unit": "分钟",
+      "description": "你在频道顶层说话之后这么久里，别人在顶层说的也收（多半是在接你的话），发成 slack-me/channel，key 是频道 id。你再说话就重新计时。0 = 不收。"
     },
     {
       "key": "allow",
@@ -100,6 +123,15 @@
           "title": "Small channels in full",
           "unit": "people",
           "description": "In a channel of at most this many members (you included), everything anyone says becomes slack-me/channel, no @ needed; its top level is one conversation (key: the channel id), like a group DM. 0 = off."
+        },
+        "threads": {
+          "title": "Threads you're in",
+          "description": "A channel thread you said something in or were @-mentioned in: later replies come in without an @, as slack-me/thread, keyed like the mention (channel/thread_ts) so whatever follows it hears them."
+        },
+        "afterMe": {
+          "title": "Keep listening after you speak",
+          "unit": "minutes",
+          "description": "For this long after you speak at a channel's top level, what others say there comes in too (likely answering you), as slack-me/channel keyed by the channel id. Speaking again restarts it. 0 = off."
         },
         "allow": { "title": "Only from these people", "description": "Slack user IDs (U0XXXX), comma separated. Empty = everyone." },
         "maxFileMB": { "title": "Attachment size limit", "unit": "MB", "description": "Images and files are downloaded and their paths put in the event. 0 = don't." },
