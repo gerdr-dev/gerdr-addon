@@ -142,10 +142,35 @@ async function nameOf(user) {
 }
 
 // Slack writes a mention as <@U123> (or <@U123|name>): whoever reads the event, a person or an agent, needs the name.
+// The rest goes from Slack's mrkdwn to Markdown, which is what Gerdr draws events and messages with (a chat bubble
+// showed *bold* as italic and <url|label> as is).
 async function readable(text) {
   const ids = [...new Set([...(text ?? "").matchAll(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g)].map((m) => m[1]))];
   const got = new Map(await Promise.all(ids.map(async (id) => [id, await nameOf(id)])));
-  return (text ?? "").replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => `@${got.get(id) ?? id}`);
+  return toMarkdown((text ?? "").replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, id) => `@${got.get(id) ?? id}`));
+}
+
+// *bold* → **bold**, ~strike~ → ~~strike~~, • bullets → "- ", <url|label> → [label](url), <url> → url,
+// <#C123|name> → #name, &lt; &gt; &amp; decoded. Code (``` blocks, `spans`) keeps its text, entities aside.
+function toMarkdown(text) {
+  const decode = (t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) =>
+      i % 2
+        ? decode(part)
+        : decode(
+            part
+              .replace(/<#[A-Z0-9]+\|([^>]*)>/g, "#$1")
+              .replace(/<!(here|channel|everyone)>/g, "@$1")
+              .replace(/<((?:https?|mailto):[^|>]+)\|([^>]+)>/g, "[$2]($1)")
+              .replace(/<((?:https?|mailto):[^>]+)>/g, "$1")
+              .replace(/^(\s*)[•◦▪]\s*/gm, (_, ind) => `${"  ".repeat(Math.ceil(ind.length / 2))}- `)
+              .replace(/(^|[^*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, "$1**$2**")
+              .replace(/(^|[^~\w])~(?![\s~])([^~\n]*?[^\s~])~(?![~\w])/g, "$1~~$2~~"),
+          ),
+    )
+    .join("");
 }
 
 // listen only flags D… DMs; a group DM it lets through (or a channel message) is told apart here, with the channel's
@@ -445,7 +470,7 @@ async function onMessage(ev) {
       // @-mentioned in, the thread
       key: whole && !ev.thread_ts ? ev.channel : `${ev.channel}/${threadTs}`,
       actor: ev.user,
-      title: `${who}: ${text.split("\n")[0].slice(0, 80)}`,
+      title: `${who}: ${text.split("\n")[0].replace(/\*\*/g, "").slice(0, 80)}`,
       text: text + (files.length ? `\n\n${files.map((f) => (f.path ? `[附件] ${f.path}` : `[附件没下] ${f.name}：${f.error}`)).join("\n")}` : ""),
       url: `${ws_.url}/archives/${ev.channel}/p${ev.ts.replace(".", "")}`,
       data: { channel: ev.channel, channelType: ck, place, user: ev.user, userName: who, ts: ev.ts, threadTs, text: raw, files, workspace: ws_.url, context },
