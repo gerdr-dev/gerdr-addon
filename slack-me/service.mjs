@@ -551,7 +551,7 @@ async function onGerdrEvent(e) {
     }
   }
   if (!d.channel || !d.text) return log("slack-me.send without channel / text, from", e.source);
-  const args = ["message", "send", String(d.channel), String(d.text)];
+  const args = ["message", "send", String(d.channel), slackMarks(String(d.text))];
   if (d.threadTs) args.push("--thread-ts", String(d.threadTs));
   if (ws_) args.unshift("--workspace", ws_.url);
   try {
@@ -560,6 +560,30 @@ async function onGerdrEvent(e) {
     log("send failed", err.message);
     status(T(`发不出去：${err.message}`, `Couldn't send: ${err.message}`));
   }
+}
+
+// Slack's mrkdwn only takes *bold* / ~strike~ when the marks sit next to a space or ASCII punctuation: next to
+// Chinese ("点*粗*：") they stay as literal asterisks, which is how agents' replies went out (measured 2026-11-26).
+// A zero-width space between the mark and such a neighbour makes Slack see the boundary (bold, strike, italic all
+// checked). Markdown's **bold** / ~~strike~~, which agents also write, become Slack's single marks. Code (``` blocks
+// and `spans`) is left alone.
+const ZW = "​";
+const MARK = /(?<![A-Za-z0-9*~])(\*\*|~~|\*|~)(?![\s*~])(.*?[^\s*~])\1(?![*~])/g;
+function slackMarks(text) {
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part.replace(MARK, (all, mark, body, at, s) => {
+            const m = mark[0];
+            const before = at > 0 && !/\s/.test(s[at - 1]) ? ZW : "";
+            const end = at + all.length;
+            const after = end < s.length && !/\s/.test(s[end]) ? ZW : "";
+            return `${before}${m}${body}${m}${after}`;
+          }),
+    )
+    .join("");
 }
 
 // ---- Gerdr ----
