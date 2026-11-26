@@ -151,9 +151,15 @@ async function readable(text) {
 }
 
 // *bold* → **bold**, ~strike~ → ~~strike~~, • bullets → "- ", <url|label> → [label](url), <url> → url,
-// <#C123|name> → #name, &lt; &gt; &amp; decoded. Code (``` blocks, `spans`) keeps its text, entities aside.
+// <#C123|name> → #name, &lt; &gt; &amp; decoded. Code (``` blocks, `spans`) keeps its text, URLs and entities aside.
 function toMarkdown(text) {
-  const decode = (t) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  // Slack wraps URLs in <…> inside code too ("<https://a.com>" in a pasted JSON): unwrapped there as well
+  const decode = (t) =>
+    t
+      .replace(/<((?:https?|mailto):[^|>]+)(?:\|[^>]*)?>/g, "$1")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
   return text
     .split(/(```[\s\S]*?```|`[^`\n]*`)/)
     .map((part, i) =>
