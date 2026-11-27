@@ -1,0 +1,146 @@
+{
+  "name": "飞书私聊（我的账号）",
+  "version": "0.1.0",
+  "description": "收别人发给你本人的飞书 / Lark 私聊（可选群里 @ 你和参与过的话题），变成 Gerdr 事件；回复以你本人的身份发出。用官方 lark-cli 的个人登录（--as user）轮询。",
+  "icon": "icon.png",
+  "service": {
+    "command": "node",
+    "args": [
+      "service.mjs"
+    ],
+    "events": [
+      "*/feishu-me.send"
+    ]
+  },
+  "emits": [
+    {
+      "kind": "direct",
+      "title": "飞书有人私聊我",
+      "description": "别人在飞书 / Lark 私聊你本人",
+      "reply": "feishu-me.send"
+    },
+    {
+      "kind": "mention",
+      "title": "飞书群里 @ 了我",
+      "description": "群里有人 @ 你（要在设置里打开「群里 @ 我也收」）",
+      "reply": "feishu-me.send"
+    },
+    {
+      "kind": "thread",
+      "title": "飞书我参与的话题有人回话",
+      "description": "群里你被 @ 过或回复过的话题，之后别人不 @ 你的回话",
+      "reply": "feishu-me.send"
+    },
+    {
+      "kind": "login",
+      "title": "飞书 CLI 登录失效",
+      "description": "lark-cli 的个人登录过期或缺少 IM 权限，需要你在终端跑 lark-cli auth login --domain im"
+    }
+  ],
+  "settings": [
+    {
+      "key": "interval",
+      "title": "多久查一次",
+      "type": "number",
+      "default": 30,
+      "min": 10,
+      "max": 3600,
+      "unit": "秒",
+      "description": "轮询新消息的间隔。越短越及时，调用频率也越高。"
+    },
+    {
+      "key": "mentions",
+      "title": "群里 @ 我也收",
+      "type": "boolean",
+      "default": true,
+      "description": "打开后群里有人 @ 你发成 feishu-me/mention（需要 search:message 权限）。"
+    },
+    {
+      "key": "threads",
+      "title": "参与过的话题也收",
+      "type": "boolean",
+      "default": true,
+      "description": "群里你被 @ 过或回复过的话题，之后别人不 @ 你的回话发成 feishu-me/thread（key 和 @ 你那条相同）。"
+    },
+    {
+      "key": "excludeMuted",
+      "title": "跳过免打扰对话",
+      "type": "boolean",
+      "default": false,
+      "description": "打开后忽略你设为免打扰的单聊会话（走会话列表模式时生效）。"
+    },
+    {
+      "key": "allow",
+      "title": "只收这些人的消息",
+      "type": "string",
+      "default": "",
+      "description": "飞书用户的 open_id（ou_…），逗号分隔。空着 = 谁的都收。消息内容会交给 agent，拿不准别全放开。"
+    },
+    {
+      "key": "maxFileMB",
+      "title": "附件大小上限",
+      "type": "number",
+      "default": 20,
+      "min": 0,
+      "max": 200,
+      "unit": "MB",
+      "description": "消息里的图片、文件下到本机，路径放进事件。0 = 不下。"
+    },
+    {
+      "key": "profile",
+      "title": "lark-cli 配置名（profile）",
+      "type": "string",
+      "default": "",
+      "description": "空着 = 用 lark-cli 当前默认配置。同时用国内飞书和国际版 Lark 时，填 lark-cli profile list 里的名字。"
+    },
+    {
+      "key": "larkCli",
+      "title": "lark-cli 路径",
+      "type": "string",
+      "default": "",
+      "description": "空着 = 在 PATH、/opt/homebrew/bin、/usr/local/bin 和 version-fox / nvm 装的 node 里找。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Feishu / Lark DMs (My Account)",
+      "description": "Messages people send you on Feishu / Lark (direct messages, optionally @-mentions and threads you joined) become Gerdr events; replies are sent as you. Polls using the official lark-cli signed in as you (--as user).",
+      "settings": {
+        "interval": {
+          "title": "Check every",
+          "unit": "s",
+          "description": "How often to poll for new messages."
+        },
+        "mentions": {
+          "title": "Group @-mentions too",
+          "description": "Group messages mentioning you become feishu-me/mention (needs search:message scope)."
+        },
+        "threads": {
+          "title": "Threads you're in too",
+          "description": "Follow-ups without @ in group threads you were @-mentioned in or replied to become feishu-me/thread (same key as the @-mention)."
+        },
+        "excludeMuted": {
+          "title": "Skip muted chats",
+          "description": "Ignore direct-message chats you muted (applies when polling via chat list)."
+        },
+        "allow": {
+          "title": "Only from these people",
+          "description": "Feishu / Lark open_ids (ou_…), comma separated. Empty = everyone."
+        },
+        "maxFileMB": {
+          "title": "Attachment size limit",
+          "unit": "MB",
+          "description": "Images and files in a message are downloaded and their paths put in the event. 0 = don't."
+        },
+        "profile": {
+          "title": "lark-cli profile",
+          "description": "Empty = default profile. Set a profile name from `lark-cli profile list` if you use both Feishu and Lark."
+        },
+        "larkCli": {
+          "title": "lark-cli path",
+          "description": "Empty = look on PATH, /opt/homebrew/bin, /usr/local/bin and in version-fox / nvm node installs."
+        }
+      }
+    }
+  }
+}

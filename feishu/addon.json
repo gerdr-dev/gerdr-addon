@@ -1,0 +1,129 @@
+{
+  "name": "飞书",
+  "version": "0.1.0",
+  "description": "收发给你的飞书机器人的私信和群里 @ 它的消息，变成 Gerdr 事件；回复以机器人的身份发出。要在飞书开放平台建一个企业自建应用，用长连接收消息，不需要公网地址。支持飞书和国际版 Lark。",
+  "icon": "icon.png",
+  "service": {
+    "command": "node",
+    "args": [
+      "service.mjs"
+    ],
+    "events": [
+      "*/feishu.send"
+    ]
+  },
+  "emits": [
+    {
+      "kind": "dm",
+      "title": "飞书私信",
+      "description": "有人私信你的飞书机器人",
+      "reply": "feishu.send"
+    },
+    {
+      "kind": "mention",
+      "title": "飞书群里 @ 了机器人",
+      "description": "群里有人 @ 你的机器人，或在机器人参与过的话题里接着说",
+      "reply": "feishu.send"
+    },
+    {
+      "kind": "message",
+      "title": "飞书群消息",
+      "description": "机器人所在群里的其它消息（要在插件设置里打开「群里不 @ 也收」）",
+      "reply": "feishu.send"
+    }
+  ],
+  "settings": [
+    {
+      "key": "domain",
+      "title": "平台版本",
+      "type": "select",
+      "default": "feishu",
+      "options": [
+        {
+          "value": "feishu",
+          "label": "飞书（中国版，feishu.cn）"
+        },
+        {
+          "value": "lark",
+          "label": "Lark（国际版，larksuite.com）"
+        }
+      ],
+      "description": "根据你的应用所在开放平台选择，两者的接口域名不同。"
+    },
+    {
+      "key": "appId",
+      "title": "App ID",
+      "type": "string",
+      "default": "",
+      "description": "cli_…：飞书开放平台 → 应用详情 → 凭证与基础信息。"
+    },
+    {
+      "key": "appSecret",
+      "title": "App Secret",
+      "type": "secret",
+      "default": "",
+      "description": "飞书开放平台 → 应用详情 → 凭证与基础信息。"
+    },
+    {
+      "key": "allow",
+      "title": "只收这些人的消息",
+      "type": "string",
+      "default": "",
+      "description": "飞书用户的 open_id（ou_…），逗号分隔。空着 = 谁的都收。消息内容会交给 agent，强烈建议只放自己。"
+    },
+    {
+      "key": "groupMessages",
+      "title": "群里不 @ 也收",
+      "type": "boolean",
+      "default": false,
+      "description": "打开后机器人所在群里的每条消息都发成 feishu/message 事件（需要 im:message.group_msg 权限）。默认只收私信和 @。"
+    },
+    {
+      "key": "maxFileMB",
+      "title": "附件大小上限",
+      "type": "number",
+      "default": 20,
+      "min": 0,
+      "max": 200,
+      "unit": "MB",
+      "description": "消息里的图片、文件下到本机（需要 im:resource 权限），路径放进事件。0 = 不下。"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "name": "Feishu / Lark",
+      "description": "Messages to your Feishu / Lark bot (direct messages and @-mentions in groups) become Gerdr events; replies are sent as the bot. Needs a custom app on the Feishu / Lark Open Platform; uses persistent WebSocket connection (no public address needed).",
+      "settings": {
+        "domain": {
+          "title": "Platform",
+          "description": "Match the Open Platform where your app was created.",
+          "options": {
+            "feishu": "Feishu (China, feishu.cn)",
+            "lark": "Lark (International, larksuite.com)"
+          }
+        },
+        "appId": {
+          "title": "App ID",
+          "description": "cli_…, from Credentials & Basic Info in the Developer Console."
+        },
+        "appSecret": {
+          "title": "App Secret",
+          "description": "From Credentials & Basic Info in the Developer Console."
+        },
+        "allow": {
+          "title": "Only from these people",
+          "description": "Feishu / Lark open_ids (ou_…), comma separated. Empty = everyone. Messages reach agents: list only yourself if you can."
+        },
+        "groupMessages": {
+          "title": "Group messages without @",
+          "description": "Every message in groups the bot is in becomes a feishu/message event (needs im:message.group_msg). Off: only DMs and mentions."
+        },
+        "maxFileMB": {
+          "title": "Attachment size limit",
+          "unit": "MB",
+          "description": "Images and files in a message are downloaded (needs im:resource) and their paths put in the event. 0 = don't."
+        }
+      }
+    }
+  }
+}
