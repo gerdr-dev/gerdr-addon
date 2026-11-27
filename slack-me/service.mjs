@@ -327,7 +327,10 @@ async function connect() {
   // With smallChannel, threads or afterMe on, every channel message has to come through (yours too, to know where you
   // are) and onMessage sorts them. That costs nothing on Slack's side: the socket carries all of your channels either
   // way and slackctl filters locally (internal/listen/event.go), so only this process parses more lines.
-  const args = ["listen", "--workspace", ws_.url, "--include-bots=false"];
+  // Reactions too: a colleague's 👌 on what you asked is often the whole answer (2026-11-27: a wait on a DM never heard
+  // one). listen passes non-message events unfiltered, so every reaction in the workspace comes; onReaction keeps those
+  // on your own messages.
+  const args = ["listen", "--workspace", ws_.url, "--include-bots=false", "--types", "message,reaction_added"];
   if (!needAll()) args.push("--mentions-or-dms");
   const p = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
   proc = p;
@@ -353,6 +356,7 @@ async function connect() {
       return;
     }
     if (f.type === "message" && p === proc) onMessage(f).catch((e) => log("message failed", e.message));
+    else if (f.type === "reaction_added" && p === proc) onReaction(f).catch((e) => log("reaction failed", e.message));
   });
   createInterface({ input: p.stderr }).on("line", (line) => {
     log("slackctl:", line);
@@ -482,6 +486,58 @@ async function onMessage(ev) {
       data: { channel: ev.channel, channelType: ck, place, user: ev.user, userName: who, ts: ev.ts, threadTs, text: raw, files, workspace: ws_.url, context },
       // An answer goes out as you: subscribers that reply should mean to
       reply: { kind: "slack-me.send", data: { channel: ev.channel, threadTs } },
+    },
+  });
+}
+
+// A reaction listen passes on as Slack sent it: { type: "reaction_added", user, reaction, item: { type, channel, ts },
+// item_user, event_ts }. Only someone else's reaction on a message of yours is news to you, and only where a message
+// there would have come in. Its own kind, keyed like that conversation's messages, so whatever follows the
+// conversation hears it while a panel that starts work on every DM doesn't start one on every 👍.
+async function onReaction(ev) {
+  const item = ev.item ?? {};
+  if (item.type !== "message" || !item.channel || !item.ts || !ev.user || !me) return;
+  if (ev.item_user !== me || ev.user === me) return;
+  const allow = allowList();
+  if (allow.length && !allow.includes(ev.user)) return;
+
+  const channel = item.channel;
+  const info = channel.startsWith("D") ? { kind: "im" } : await kindOf(channel);
+  const ck = info.kind;
+  if (ck === "mpim" && settings.groupDMs === false) return;
+  // The message reacted to, for its thread and its words. replies takes a thread reply's ts as well as a parent's.
+  const j = await api("conversations.replies", { channel, ts: item.ts, limit: "1" }).catch((e) => (log("fetch reacted message failed", e.message), null));
+  const msg = (j?.messages ?? []).find((m) => m.ts === item.ts) ?? j?.messages?.[0] ?? null;
+  const threadTs = msg?.thread_ts && msg.thread_ts !== item.ts ? msg.thread_ts : undefined;
+  const small = ck === "channel" && smallMax() > 0 && info.members > 0 && info.members <= smallMax();
+  let key;
+  if (ck === "im" || ck === "mpim" || small) key = threadTs ? `${channel}/${threadTs}` : channel;
+  else {
+    // A channel: the thread your message is in or starts, if you're following it (what you say there joins you)
+    const t = threadTs ?? item.ts;
+    if (!threadsOn() || !(await inThread(channel, t))) return;
+    key = `${channel}/${t}`;
+  }
+
+  const who = await nameOf(ev.user);
+  const said = msg ? (await readable(msg.text ?? "")).split("\n")[0].replace(/\*\*/g, "").slice(0, 60) : "";
+  const emoji = `:${ev.reaction}:`;
+  const text = T(`${who} 给你的消息${said ? `「${said}」` : ""}点了 ${emoji}`, `${who} reacted ${emoji} to your message${said ? ` "${said}"` : ""}`);
+  const chan = info.name ? `#${info.name}` : "频道";
+  const place = ck === "im" ? "私聊" : ck === "mpim" ? "群私聊" : key === channel ? chan : `${chan} 的消息列`;
+  const replyThread = key === channel ? undefined : key.slice(channel.length + 1);
+  out({
+    type: "event",
+    event: {
+      id: `slack-me:${channel}:${item.ts}:${ev.user}:${ev.reaction}`,
+      kind: "reaction",
+      key,
+      actor: ev.user,
+      title: text.slice(0, 100),
+      text,
+      url: `${ws_.url}/archives/${channel}/p${item.ts.replace(".", "")}`,
+      data: { channel, channelType: ck, place, user: ev.user, userName: who, reaction: ev.reaction, ts: item.ts, threadTs: replyThread, text: msg?.text ?? "", workspace: ws_.url },
+      reply: { kind: "slack-me.send", data: { channel, threadTs: replyThread } },
     },
   });
 }

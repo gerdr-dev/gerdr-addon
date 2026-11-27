@@ -1,6 +1,6 @@
 {
   "name": "Slack 私聊（我的账号）",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "收别人发给你本人的 Slack 私聊，变成 Gerdr 事件；回复以你本人的身份发出。不用建 app，用你在 Slack 桌面版的登录（要装 slackctl）。",
   "icon": "icon.svg",
   "service": {
@@ -31,6 +31,12 @@
       "kind": "channel",
       "title": "Slack 频道里在跟我聊",
       "description": "小频道（人数不超过「小频道全收」）里谁说的都算；大频道里你刚在顶层说过话，之后一阵别人说的也算（设置「说话后接着收」），不用 @ 你",
+      "reply": "slack-me.send"
+    },
+    {
+      "kind": "reaction",
+      "title": "Slack 有人给我的消息点了表情",
+      "description": "私聊、群私聊、小频道和你参与的消息列里，别人给你发的消息加了表情回应；key 和那段对话的消息一样，跟着它的任务能听到",
       "reply": "slack-me.send"
     }
   ],
