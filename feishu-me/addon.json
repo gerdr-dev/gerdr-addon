@@ -1,6 +1,6 @@
 {
   "name": "飞书私聊（我的账号）",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "收别人发给你本人的飞书 / Lark 私聊（可选群里 @ 你和参与过的话题），变成 Gerdr 事件；回复以你本人的身份发出。用官方 lark-cli 的个人登录（--as user）轮询。",
   "icon": "icon.png",
   "service": {
@@ -32,6 +32,11 @@
       "reply": "feishu-me.send"
     },
     {
+      "kind": "bot.message",
+      "title": "飞书指定群的机器人消息",
+      "description": "接收插件设置中指定的飞书 / Lark 群里新发出的机器人消息"
+    },
+    {
       "kind": "login",
       "title": "飞书 CLI 登录失效",
       "description": "lark-cli 的个人登录过期或缺少 IM 权限，需要你在终端跑 lark-cli auth login --domain im"
@@ -61,6 +66,13 @@
       "type": "boolean",
       "default": true,
       "description": "群里你被 @ 过或回复过的话题，之后别人不 @ 你的回话发成 feishu-me/thread（key 和 @ 你那条相同）。"
+    },
+    {
+      "key": "botChats",
+      "title": "接收机器人消息的群",
+      "type": "string",
+      "default": "",
+      "description": "填飞书群 ID（oc_…），多个群用逗号分隔。空着时关闭。每个群只接收启用后的新消息。"
     },
     {
       "key": "excludeMuted",
@@ -118,6 +130,10 @@
         "threads": {
           "title": "Threads you're in too",
           "description": "Follow-ups without @ in group threads you were @-mentioned in or replied to become feishu-me/thread (same key as the @-mention)."
+        },
+        "botChats": {
+          "title": "Groups to receive bot messages from",
+          "description": "Comma-separated Feishu / Lark chat IDs (oc_…). Leave empty to disable. Each group starts with new messages after it is enabled."
         },
         "excludeMuted": {
           "title": "Skip muted chats",

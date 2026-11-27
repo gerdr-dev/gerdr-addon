@@ -9,6 +9,7 @@
 // - Fallback path: if `search:message` scope is not granted, falls back to `lark-cli im +chat-list --as user --types p2p
 //   --sort active_time` + `im +chat-messages-list` on recently active DMs.
 // - Followed group threads: `lark-cli im +threads-messages-list --as user` on threads where you were @-mentioned or replied.
+// - Bot notifications: chat history for explicitly selected groups, using a separate cursor for each group.
 //
 // First run only records the current baseline so enabling it does not flood the inbox with history.
 // Talks to Gerdr in JSON lines: stdin gets hello / settings / event, stdout sends status / event.
@@ -50,6 +51,7 @@ let state = {
   lastPollAt: 0,
   seen: [], // newest-last array of message_ids
   threads: {}, // thread_id (omt_... or om_...) -> { chatId, chatName, rootId, lastAt }
+  botChats: {},
 };
 let seenSet = new Set();
 
@@ -174,10 +176,11 @@ async function loadState() {
       lastPollAt: Number(raw.lastPollAt) || 0,
       seen: Array.isArray(raw.seen) ? raw.seen.slice(-MAX_SEEN) : [],
       threads: raw.threads && typeof raw.threads === "object" ? raw.threads : {},
+      botChats: raw.botChats && typeof raw.botChats === "object" ? raw.botChats : {},
     };
     seenSet = new Set(state.seen);
   } catch {
-    state = { initialized: false, lastPollAt: 0, seen: [], threads: {} };
+    state = { initialized: false, lastPollAt: 0, seen: [], threads: {}, botChats: {} };
     seenSet = new Set();
   }
 }
@@ -573,6 +576,67 @@ async function pollTrackedThreads() {
   return candidates;
 }
 
+async function pollBotChats(now) {
+  const chats = new Set(String(settings.botChats ?? "").split(/[,，\s]+/).filter((id) => /^oc_[\w-]+$/.test(id)));
+  for (const chatId of Object.keys(state.botChats)) {
+    if (!chats.has(chatId)) delete state.botChats[chatId];
+  }
+
+  let emitted = 0;
+  const failed = [];
+  for (const chatId of chats) {
+    const cursor = state.botChats[chatId] ??= { since: Math.ceil(now / 1000) * 1000, checkedAt: now };
+    const start = Math.max(cursor.since, cursor.checkedAt - OVERLAP_MS);
+    const args = [
+      "im", "+chat-messages-list", "--as", "user", "--chat-id", chatId,
+      "--start", formatLocalIso(start), "--order", "asc", "--page-size", "50", "--no-reactions",
+    ];
+    try {
+      let token = "";
+      do {
+        const result = await larkCli(token ? [...args, "--page-token", token] : args);
+        for (const msg of result.data?.messages ?? []) {
+          if (msg.chat_id !== chatId || !msg.message_id || msg.deleted || !isBotSender(msg)) continue;
+          const actor = senderIdOf(msg);
+          const body = cleanMessageText(msg.content, msg.mentions);
+          if (!actor || !body || !markSeen(msg.message_id)) continue;
+          const who = senderNameOf(msg);
+          out({
+            type: "event",
+            event: {
+              id: `feishu-me:${chatId}:${msg.message_id}`,
+              kind: "bot.message",
+              key: chatId,
+              actor,
+              title: `${who}: ${body.split("\n")[0].slice(0, 80)}`,
+              text: body,
+              url: msg.message_app_link || undefined,
+              data: {
+                chat_id: chatId,
+                chatType: "group",
+                message_id: msg.message_id,
+                userName: who,
+                place: msg.chat_name || chatId,
+                text: body,
+                brand: me?.brand || "feishu",
+              },
+            },
+          });
+          emitted++;
+        }
+        const next = result.data?.page_token;
+        if (result.data?.has_more && (!next || next === token)) throw new Error("Missing next page");
+        token = result.data?.has_more ? next : "";
+      } while (token);
+      cursor.checkedAt = now;
+    } catch (e) {
+      failed.push(chatId);
+      log("bot chat poll failed", chatId, e.message);
+    }
+  }
+  return { emitted, failed, count: chats.size };
+}
+
 async function emitMessage(item) {
   const { msg, kind, chatType } = item;
   const chatId = msg.chat_id;
@@ -697,12 +761,12 @@ async function poll() {
     let emitted = 0;
     for (const item of ordered) {
       const m = item.msg;
-      if (!m?.message_id || !m?.chat_id) continue;
+      if (!m?.message_id || !m?.chat_id || isBotSender(m)) continue;
       if (seenSet.has(m.message_id)) continue;
       markSeen(m.message_id);
 
       if (first) continue; // Baseline only on very first run
-      if (m.deleted || m.msg_type === "system" || isBotSender(m)) continue;
+      if (m.deleted || m.msg_type === "system") continue;
       const sid = senderIdOf(m);
       if (!sid || (me?.openId && sid === me.openId)) continue;
       if (allow.length && !allow.includes(sid)) continue;
@@ -711,6 +775,8 @@ async function poll() {
       emitted++;
     }
 
+    const bots = await pollBotChats(now);
+    emitted += bots.emitted;
     state.initialized = true;
     state.lastPollAt = now;
     await saveState();
@@ -718,10 +784,13 @@ async function poll() {
 
     const clock = new Date().toLocaleTimeString(zh ? "zh-CN" : "en-GB", { hour12: false });
     const modeNote = mode === "chat-list" ? T("（会话列表模式）", " (chat-list mode)") : "";
+    const botNote = bots.failed.length
+      ? T(`；机器人消息读取失败：${bots.failed.join(", ")}`, `; could not read bot messages: ${bots.failed.join(", ")}`)
+      : bots.count ? T(`；已查 ${bots.count} 个机器人消息群`, `; checked ${bots.count} groups for bot messages`) : "";
     status(
       T(
-        `${clock} 已查（${me.userName}）${modeNote}${first ? "：首次运行，已记下现状" : emitted ? `：新收 ${emitted} 条` : ""}`,
-        `Checked ${clock} (${me.userName})${modeNote}${first ? ": first run, baseline saved" : emitted ? `: ${emitted} new` : ""}`,
+        `${clock} 已查（${me.userName}）${modeNote}${first ? "：首次运行，已记下现状" : emitted ? `：新收 ${emitted} 条` : ""}${botNote}`,
+        `Checked ${clock} (${me.userName})${modeNote}${first ? ": first run, baseline saved" : emitted ? `: ${emitted} new` : ""}${botNote}`,
       ),
     );
   } catch (e) {

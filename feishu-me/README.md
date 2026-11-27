@@ -37,15 +37,18 @@
 | `feishu-me/direct` | 有人私聊你本人 | 会话 ID（`oc_…`） |
 | `feishu-me/mention` | 群里有人 @ 你（设置「群里 @ 我也收」，默认开） | `chat_id/root_id` |
 | `feishu-me/thread` | 群里你被 @ 过或回复过的话题，之后别人不 @ 你的回话（设置「参与过的话题也收」，默认开） | `chat_id/root_id`（和 @ 你那条相同） |
+| `feishu-me/bot.message` | 「接收机器人消息的群」里新发出的机器人消息 | 群 ID（`oc_…`） |
 | `feishu-me/login` | `lark-cli` 未登录、登录过期或缺少 IM 权限 | `login` |
 
 - 第一次启动只记录现状基线，不会把历史旧消息灌进收件箱。
-- 你自己发的、机器人发的、系统消息、已撤回消息都会过滤掉。
+- 私聊、@ 和话题事件只收其他人发送的消息，并跳过系统和撤回消息。
 - `actor` 是发消息人的 `open_id`（`ou_…`），`data`：`{ chat_id, chatType, message_id, root_id, thread_id, open_id, user, userName, place, text, files, context, brand }`。
 - `place` 是给人看的位置说明：`私聊`、`群名`、`群名 的话题`。
 - `context` 带上这段对话里它之前的最多 8 条消息（两天内，含你自己说的 `me: true`）。
 
 > 故意没叫 `dm`：`dm` 在 Gerdr 里的意思是「我自己发给我的 bot 的私信」，[在聊天里审批](../remote-answer) 这类插件会往最近一条 `dm` 发审批。别人私聊你不是这种对话，混进去会把审批发给同事。
+
+在「接收机器人消息的群」填要接入的群 ID，逗号分隔。可以用 `lark-cli im +chat-search --as user --query "群名"` 查 ID，插件用同一账号读取这些群。每个群从启用时开始接收。机器人事件的 `actor` 是发送者的应用 ID（`cli_…`），可用作面板触发器的发送者过滤条件。事件携带消息正文和飞书消息链接（如有），供面板处理告警。
 
 ## 回复
 
